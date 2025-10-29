@@ -69,13 +69,18 @@ async function loginOrRegister(kind){
     if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${data.error}</span>`; return; }
     setUser({userId, pin});
     uiUpdateAuth();
-    await refreshAfterAuth(true); // force sync on first login
+    await refreshAfterAuth(false); // allow cache-first on first login
     authMsg.innerHTML = kind==='register' ? '<span class="ok">Registered!</span>' : '<span class="ok">Logged in.</span>';
   }catch(e){
     authMsg.innerHTML = '<span class="err">Network error.</span>';
   }
 }
 function logout(){ setUser(null); uiUpdateAuth(); }
+
+// --- Busy ref-counter for refresh spinner (prevents flicker) ---
+let _busyRefCount = 0;
+function beginBusy(){ _busyRefCount++; if (refreshBtn) refreshBtn.classList.add('btn-busy'); }
+function endBusy(){ _busyRefCount = Math.max(0, _busyRefCount-1); if (_busyRefCount===0 && refreshBtn) refreshBtn.classList.remove('btn-busy'); }
 
 // --- Data loads ---
 async function loadProfile(){
@@ -132,60 +137,81 @@ function writeActivitiesCache(activities, signature){
   localStorage.setItem(ACT_CACHE_KEY, JSON.stringify(o));
 }
 async function activitiesSignature(activities){
-  // Signature over the fields that affect rendering
   const key = activities.map(a => [a.activityId, a.title, a.prompt, a.points, a.openIso, a.closeIso]);
   return await sha256Hex(JSON.stringify(key));
 }
 
-async function loadActivities(submittedSet = new Set(), opts = { forceSync:false }){
-  const u = currentUser(); if(!u){ activitiesEl.innerHTML=''; return; }
+// Two-stage load: render cached instantly, then sync server + submissions in parallel
+async function refreshAfterAuth(forceSync=false){
+  const u = currentUser(); if(!u) return;
 
-  // 1) Try cache first for instant render
+  // Kick off header data in parallel (profile/leaderboard/grading)
+  const headPromises = [ loadProfile(), loadLeaderboard(), loadGradingMap() ];
+
+  // 1) Instant render from cache (even before submissions)
   const cached = readActivitiesCache();
-  if (cached && cached.activities && !opts.forceSync){
-    renderActivities(cached.activities, submittedSet);
-    // 2) In background, check for updates; if signature changed, re-render
-    syncActivitiesInBackground(submittedSet, cached.signature);
-    return;
+  if (cached && cached.activities){
+    renderActivities(cached.activities, new Set());
+  } else {
+    activitiesEl.innerHTML = '<p class="muted">Loading activities…</p>';
   }
 
-  // 3) If no cache (or forced), show spinner on refresh and fetch fresh
-  setRefreshBusy(true);
-  try{
-    const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
-    const data = await res.json();
-    if (data.ok){
-      renderActivities(data.activities, submittedSet);
-      const sig = await activitiesSignature(data.activities || []);
-      writeActivitiesCache(data.activities || [], sig);
-    } else {
-      activitiesEl.innerHTML = '<p class="muted">Could not load activities.</p>';
-    }
-  }catch(e){
-    activitiesEl.innerHTML = '<p class="muted">Could not load activities.</p>';
-  } finally {
-    setRefreshBusy(false);
-  }
-}
+  // 2) In parallel: fetch submissions and (optionally) fresh activities
+  const submissionsPromise = loadSubmittedSet(u.userId).then(set => {
+    applySubmissionLocks(set); // update tiles in place
+    return set;
+  });
 
-async function syncActivitiesInBackground(submittedSet, prevSig){
-  setRefreshBusy(true);
-  try{
-    const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
-    const data = await res.json();
-    if (!data.ok) return;
-    const sig = await activitiesSignature(data.activities || []);
-    if (sig !== prevSig){
-      writeActivitiesCache(data.activities || [], sig);
-      renderActivities(data.activities || [], submittedSet);
+  // Decide whether to force server load
+  const needServerLoad = forceSync || !cached;
+
+  const activitiesPromise = (async () => {
+    if (!needServerLoad){
+      // Background signature check (no flicker)
+      beginBusy();
+      try{
+        const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
+        const data = await res.json();
+        if (!data.ok) return cached ? cached.activities : [];
+        const sig = await activitiesSignature(data.activities || []);
+        if (!cached || sig !== cached.signature){
+          writeActivitiesCache(data.activities || [], sig);
+          renderActivities(data.activities || [], new Set()); // render quickly...
+          // ...then re-apply submission locks when submissions arrive
+          const set = await submissionsPromise.catch(()=>new Set());
+          applySubmissionLocks(set);
+          return data.activities || [];
+        }
+        return cached.activities || [];
+      } finally { endBusy(); }
     } else {
-      // no change; optional tiny visual tick could go here
+      // No cache or forced: fetch and render now
+      beginBusy();
+      try{
+        const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
+        const data = await res.json();
+        if (data.ok){
+          const sig = await activitiesSignature(data.activities || []);
+          writeActivitiesCache(data.activities || [], sig);
+          renderActivities(data.activities || [], new Set());
+          const set = await submissionsPromise.catch(()=>new Set());
+          applySubmissionLocks(set);
+          return data.activities || [];
+        } else {
+          activitiesEl.innerHTML = '<p class="muted">Could not load activities.</p>';
+          return [];
+        }
+      } catch(e){
+        activitiesEl.innerHTML = '<p class="muted">Could not load activities.</p>';
+        return [];
+      } finally { endBusy(); }
     }
-  }catch(e){
-    // silent
-  } finally {
-    setRefreshBusy(false);
-  }
+  })();
+
+  // Wait for header fetches (not blocking UI render)
+  await Promise.allSettled(headPromises);
+  // If nothing cached and server failed, at least submissions applied to whatever is visible
+  await Promise.allSettled([submissionsPromise, activitiesPromise]);
 }
 
 function renderActivities(activities, submittedSet){
@@ -197,10 +223,20 @@ function renderActivities(activities, submittedSet){
   }
 }
 
-function setRefreshBusy(isBusy){
-  if (!refreshBtn) return;
-  if (isBusy) refreshBtn.classList.add('btn-busy');
-  else refreshBtn.classList.remove('btn-busy');
+// Apply "already submitted" state without re-rendering all tiles
+function applySubmissionLocks(submittedSet){
+  if (!(submittedSet instanceof Set)) return;
+  const tiles = activitiesEl.querySelectorAll('.tile');
+  tiles.forEach(tile => {
+    const id = tile.getAttribute('data-activity-id');
+    if (!id) return;
+    if (submittedSet.has(id)){
+      tile.classList.add('disabled');
+      const ta = tile.querySelector('textarea'); if (ta) ta.disabled = true;
+      const btn = tile.querySelector('button.submit'); if (btn){ btn.disabled = true; btn.textContent='Submitted'; }
+      const res = tile.querySelector('.result'); if (res && !res.textContent.trim()) res.textContent = 'You already submitted this activity.';
+    }
+  });
 }
 
 // --- Preload grading map (salt + hashed answers) ---
@@ -222,19 +258,12 @@ async function loadGradingMap(){
   }catch(e){}
 }
 
-// --- Coordinated refresh after login ---
-async function refreshAfterAuth(forceSync=false){
-  const u = currentUser(); if(!u) return;
-  await Promise.all([ loadProfile(), loadLeaderboard(), loadGradingMap() ]);
-  const submittedSet = await loadSubmittedSet(u.userId);
-  await loadActivities(submittedSet, { forceSync });
-}
-
 // --- Tile rendering with optimistic submit + busy + status overlays ---
 function activityTile(a, submittedSet){
   const alreadySubmitted = submittedSet.has(a.activityId);
   const div = document.createElement('div');
   div.className = 'card tile' + (alreadySubmitted ? ' disabled' : '');
+  div.setAttribute('data-activity-id', a.activityId || '');
 
   div.innerHTML = `
     <h3>${escapeHtml(a.title)}</h3>
@@ -260,14 +289,12 @@ function activityTile(a, submittedSet){
       if (!answer){ alert('Enter an answer.'); return; }
 
       // --- Local grading (instant yes/no if we have a hash) ---
-      let localCorrect = null;
       let displayedNeutral = false;
       const h = GRADING.hashes[a.activityId];
 
       if (GRADING.salt && h){
         const userHash = await sha256Hex(GRADING.salt + normalizeAnswer(answer));
-        localCorrect = (userHash === h);
-        if (localCorrect === true) {
+        if (userHash === h) {
           const awardGuess = (a.points || GRADING.points[a.activityId] || 0);
           res.innerHTML = `<span class="ok">Correct! +${awardGuess} 🪙</span>`;
           showStatus(div, 'ok', 'Correct!');
@@ -276,7 +303,6 @@ function activityTile(a, submittedSet){
           showStatus(div, 'err', 'Not quite');
         }
       } else {
-        // No correct/incorrect key => neutral
         displayedNeutral = true;
         res.innerHTML = `<span class="muted">Submitting…</span>`;
         showStatus(div, 'warn', 'Submitted');
@@ -298,7 +324,6 @@ function activityTile(a, submittedSet){
         const d = await r.json();
 
         if (d.ok){
-          // Reconcile with server
           const award = Number(d.pointsAwarded||0);
           if (d.correct === true){
             res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`;
@@ -311,7 +336,6 @@ function activityTile(a, submittedSet){
             if (!displayedNeutral) showStatus(div, 'warn', 'Submitted');
           }
 
-          // Update balance instantly (if provided)
           if (typeof d.newBalance === 'number'){
             balanceEl.textContent = d.newBalance;
           } else {
@@ -323,10 +347,7 @@ function activityTile(a, submittedSet){
           ans.disabled = true;
           btn.textContent = 'Submitted';
           div.classList.add('disabled');
-
-          // Background leaderboard refresh
-          loadLeaderboard();
-
+          loadLeaderboard(); // background refresh
         } else {
           if (d.error === 'already_submitted') {
             res.innerHTML = '<span class="muted">Already submitted previously.</span>';
@@ -416,7 +437,7 @@ uiUpdateAuth();
 loadLeaderboard();
 setInterval(loadLeaderboard, 30000); // optional projector refresh
 
-// If a user is already logged in, immediately load their submissions + activities + grading map
+// If a user is already logged in, immediately show cached activities (if any) and sync
 if (currentUser()) {
-  refreshAfterAuth();
+  refreshAfterAuth(false);
 }
