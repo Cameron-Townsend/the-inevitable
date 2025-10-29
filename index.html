@@ -1,297 +1,67 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Class Challenges Hub</title>
-<style>
-  :root { --bg:#f7f9fc; --card:#fff; --ink:#111827; --muted:#6b7280; --brand:#2563eb; --ok:#10b981; --warn:#ef4444; }
-  body { margin:0; font-family:system-ui, Arial; background:var(--bg); color:var(--ink); }
-  .wrap { max-width:980px; margin:0 auto; padding:24px; }
-  .grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); }
-  .card { background:var(--card); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.06); padding:16px; }
-  h1,h2 { margin:0 0 10px; }
-  label { display:block; font-size:14px; margin-top:8px; }
-  input, textarea { width:100%; padding:10px; border:1px solid #d9e1ee; border-radius:8px; box-sizing:border-box; font-size:16px; }
-  button { padding:10px 12px; border:0; border-radius:8px; background:var(--brand); color:#fff; cursor:pointer; }
-  button[disabled]{ background:#9db5f1; cursor:not-allowed; }
-  .row { display:grid; grid-template-columns: 1fr auto; gap:8px; }
-  .muted { color:var(--muted); font-size:12px; }
-  .badge { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef2ff; font-size:12px; }
-  .ok { color:var(--ok); }
-  .err { color:var(--warn); }
-  table { width:100%; border-collapse:collapse; }
-  th, td { text-align:left; padding:8px; border-bottom:1px solid #eef2f7; }
-  .tile { display:flex; flex-direction:column; gap:8px; }
-  .tile h3 { margin:0; }
-  .flex { display:flex; gap:8px; align-items:center; }
-  .space { height:14px; }
-
-  /* ✅ Grayed-out, locked tiles after submission */
-  .tile.disabled { opacity: 0.55; filter: grayscale(0.2); }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Class Challenges Hub</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
+  <div class="wrap">
 
-  <div class="grid">
-    <!-- Auth / Profile -->
-    <div class="card">
-      <h1>Class Challenges</h1>
-      <p class="muted">Solve activities, earn currency, climb the leaderboard.</p>
+    <div class="grid">
+      <!-- Auth / Profile -->
+      <div class="card">
+        <h1>Class Challenges</h1>
+        <p class="muted">Solve activities, earn currency, climb the leaderboard.</p>
 
-      <div id="auth">
-        <h2>Sign In</h2>
-        <label>Student ID <input id="userId" autocomplete="off" /></label>
-        <label>PIN <input id="pin" type="password" autocomplete="off" /></label>
-        <div class="flex">
-          <button id="loginBtn">Login</button>
-          <button id="registerBtn" title="First time here?">Register</button>
+        <div id="auth">
+          <h2>Sign In</h2>
+          <label>Student ID <input id="userId" autocomplete="off" /></label>
+          <label>PIN <input id="pin" type="password" autocomplete="off" /></label>
+          <div class="flex">
+            <button id="loginBtn">Login</button>
+            <button id="registerBtn" title="First time here?">Register</button>
+          </div>
+          <p id="authMsg" class="muted"></p>
         </div>
-        <p id="authMsg" class="muted"></p>
+
+        <div id="profile" style="display:none;">
+          <div class="flex">
+            <strong id="greeting"></strong>
+            <span class="badge">Balance: <span id="balance">0</span> 🪙</span>
+          </div>
+          <button id="logoutBtn" class="btn-gray">Logout</button>
+        </div>
       </div>
 
-      <div id="profile" style="display:none;">
-        <div class="flex">
-          <strong id="greeting"></strong>
-          <span class="badge">Balance: <span id="balance">0</span> 🪙</span>
-        </div>
-        <button id="logoutBtn" style="margin-top:8px;background:#6b7280;">Logout</button>
+      <!-- Leaderboard (always visible) -->
+      <div class="card">
+        <h2>Leaderboard (Top 20)</h2>
+        <table>
+          <thead><tr><th>#</th><th>Name</th><th>Currency</th></tr></thead>
+          <tbody id="boardBody"></tbody>
+        </table>
+        <p class="muted">Updates when scores are submitted.</p>
       </div>
     </div>
 
-    <!-- Leaderboard (always visible) -->
-    <div class="card">
-      <h2>Leaderboard (Top 20)</h2>
-      <table>
-        <thead><tr><th>#</th><th>Name</th><th>Currency</th></tr></thead>
-        <tbody id="boardBody"></tbody>
-      </table>
-      <p class="muted">Updates when scores are submitted.</p>
+    <div class="space"></div>
+
+    <!-- Activities (hidden until login) -->
+    <div class="card" id="activitiesCard" style="display:none;">
+      <div class="row">
+        <h2>Today’s Activities</h2>
+        <button id="refreshBtn" title="Reload activities">Refresh</button>
+      </div>
+      <div id="activities" class="grid"></div>
     </div>
+
   </div>
 
-  <div class="space"></div>
-
-  <!-- Activities (hidden until login) -->
-  <div class="card" id="activitiesCard" style="display:none;">
-    <div class="row">
-      <h2>Today’s Activities</h2>
-      <button id="refreshBtn" title="Reload activities">Refresh</button>
-    </div>
-    <div id="activities" class="grid"></div>
-  </div>
-
-</div>
-
-<script>
-const API = 'https://script.google.com/macros/s/AKfycbzrg4fq-bppa7cB4UpIc2bi_iqsYksL9gnN1gg5570ZJzh6t9eIw7N4Ltj7ioaiRB2qZw/exec';
-
-const authEl = document.getElementById('auth');
-const profileEl = document.getElementById('profile');
-const greetingEl = document.getElementById('greeting');
-const balanceEl = document.getElementById('balance');
-const boardBody = document.getElementById('boardBody');
-const activitiesEl = document.getElementById('activities');
-const activitiesCard = document.getElementById('activitiesCard');
-
-const userIdEl = document.getElementById('userId');
-const pinEl = document.getElementById('pin');
-const authMsg = document.getElementById('authMsg');
-
-document.getElementById('loginBtn').onclick = () => loginOrRegister('login');
-document.getElementById('registerBtn').onclick = () => loginOrRegister('register');
-document.getElementById('logoutBtn').onclick = logout;
-document.getElementById('refreshBtn').onclick = () => refreshAfterAuth();
-
-/* ---------- Auth state helpers ---------- */
-function currentUser(){
-  const u = localStorage.getItem('userId');
-  const p = localStorage.getItem('pin');
-  return (u && p) ? {userId:u, pin:p} : null;
-}
-function setUser(u){
-  if(u){ localStorage.setItem('userId',u.userId); localStorage.setItem('pin',u.pin); }
-  else { localStorage.removeItem('userId'); localStorage.removeItem('pin'); }
-}
-function uiUpdateAuth(){
-  const u = currentUser();
-  if(u){
-    authEl.style.display = 'none';
-    profileEl.style.display = 'block';
-    greetingEl.textContent = `Hello, ${u.userId}`;
-    activitiesCard.style.display = '';  // show activities only when logged in
-  }else{
-    authEl.style.display = 'block';
-    profileEl.style.display = 'none';
-    activitiesCard.style.display = 'none'; // landing = Auth + Leaderboard only
-    activitiesEl.innerHTML = '';
-  }
-}
-
-/* ---------- Auth endpoints ---------- */
-async function loginOrRegister(kind){
-  const userId = userIdEl.value.trim();
-  const pin = pinEl.value;
-  if (!userId || !pin){ authMsg.textContent='Enter ID and PIN.'; return; }
-  authMsg.textContent='…';
-  try{
-    const res = await fetch(API, {
-      method:'POST',
-      body: new URLSearchParams({ action: kind, userId, pin, displayName:userId })
-    });
-    const data = await res.json();
-    if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${data.error}</span>`; return; }
-    setUser({userId, pin});
-    uiUpdateAuth();
-    await refreshAfterAuth();
-    authMsg.innerHTML = kind==='register' ? '<span class="ok">Registered!</span>' : '<span class="ok">Logged in.</span>';
-  }catch(e){
-    authMsg.innerHTML = '<span class="err">Network error.</span>';
-  }
-}
-function logout(){ setUser(null); uiUpdateAuth(); }
-
-/* ---------- Coordinated refresh after login ---------- */
-async function refreshAfterAuth(){
-  const u = currentUser(); if(!u) return;
-  await Promise.all([ loadProfile(), loadLeaderboard() ]);
-  const submittedSet = await loadSubmittedSet(u.userId);
-  await loadActivities(submittedSet);
-}
-
-/* ---------- Profile, Leaderboard, Activities ---------- */
-async function loadProfile(){
-  const u = currentUser(); if(!u) return;
-  try{
-    const res = await fetch(API + '?action=getprofile&userId=' + encodeURIComponent(u.userId) + '&ts=' + Date.now());
-    const data = await res.json();
-    if (data.ok){
-      balanceEl.textContent = data.balance;
-      greetingEl.textContent = `Hello, ${u.userId}`;
-    }
-  }catch(e){}
-}
-
-async function loadLeaderboard(){
-  try{
-    const res = await fetch(API + '?action=leaderboard&ts=' + Date.now());
-    const data = await res.json();
-    boardBody.innerHTML = '';
-    if (data.ok){
-      data.leaderboard.forEach((row,i)=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${i+1}</td><td>${escapeHtml(row.name)}</td><td>${row.score}</td>`;
-        boardBody.appendChild(tr);
-      });
-    }
-  }catch(e){}
-}
-
-// get submissions for this user, to gray-out tiles
-async function loadSubmittedSet(userId){
-  try{
-    const res = await fetch(API + '?action=getsubmissions&userId=' + encodeURIComponent(userId) + '&ts=' + Date.now());
-    const data = await res.json();
-    if (data.ok){
-      return new Set(data.submissions.map(s => s.activityId));
-    }
-  }catch(e){}
-  return new Set();
-}
-
-async function loadActivities(submittedSet = new Set()){
-  const u = currentUser(); if(!u){ activitiesEl.innerHTML=''; return; }
-  activitiesEl.innerHTML = '';
-  try{
-    const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
-    const data = await res.json();
-    if (data.ok && data.activities.length){
-      data.activities.forEach(a => activitiesEl.appendChild(activityTile(a, submittedSet)));
-    } else {
-      activitiesEl.innerHTML = '<p class="muted">No open activities right now.</p>';
-    }
-  }catch(e){
-    activitiesEl.innerHTML = '<p class="muted">Could not load activities.</p>';
-  }
-}
-
-function activityTile(a, submittedSet){
-  const alreadySubmitted = submittedSet.has(a.activityId);
-  const div = document.createElement('div');
-  div.className = 'card tile' + (alreadySubmitted ? ' disabled' : '');
-
-  div.innerHTML = `
-    <h3>${escapeHtml(a.title)}</h3>
-    <p class="muted">${escapeHtml(a.prompt || '')}</p>
-    <div class="flex"><span class="badge">${a.points||0} 🪙</span></div>
-    <label>Your Answer
-      <textarea rows="2" class="answer" ${alreadySubmitted ? 'disabled' : ''}></textarea>
-    </label>
-    <button class="submit" ${alreadySubmitted ? 'disabled' : ''}>${alreadySubmitted ? 'Submitted' : 'Submit'}</button>
-    <p class="muted result">${alreadySubmitted ? 'You already submitted this activity.' : ''}</p>
-  `;
-
-  if (!alreadySubmitted){
-    const ans = div.querySelector('.answer');
-    const btn = div.querySelector('.submit');
-    const res = div.querySelector('.result');
-
-    btn.onclick = async () => {
-      const u = currentUser();
-      if (!u){ alert('Please login first.'); return; }
-      const answer = ans.value.trim();
-      if (!answer){ alert('Enter an answer.'); return; }
-
-      btn.disabled = true; btn.textContent = 'Submitting…';
-      try{
-        const r = await fetch(API, {
-          method:'POST',
-          body: new URLSearchParams({
-            action:'submitAnswer', userId:u.userId, pin:u.pin, activityId:a.activityId, answer
-          })
-        });
-        const d = await r.json();
-
-        if (d.ok){
-          const award = Number(d.pointsAwarded||0);
-          if (d.correct === true){
-            res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`;
-          } else if (d.correct === false){
-            res.innerHTML = `<span class="err">Not quite. Keep trying!</span>`;
-          } else {
-            res.innerHTML = `<span class="muted">Submitted for review.</span>`;
-          }
-          if (award>0){ await loadProfile(); await loadLeaderboard(); }
-          // Lock tile immediately
-          btn.disabled = true;
-          btn.textContent = 'Submitted';
-          ans.disabled = true;
-          div.classList.add('disabled');
-          res.insertAdjacentText('beforeend', ' (This activity is now locked for you.)');
-        } else {
-          // Server may enforce lock (already_submitted)
-          res.innerHTML = `<span class="err">Error: ${d.error}</span>`;
-          btn.disabled = false; btn.textContent = 'Submit';
-        }
-      }catch(e){
-        res.innerHTML = `<span class="err">Network error.</span>`;
-        btn.disabled = false; btn.textContent = 'Submit';
-      }
-    };
-  }
-
-  return div;
-}
-
-/* ---------- Utilities ---------- */
-function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''; return p.innerHTML; }
-
-/* ---------- Initial landing: Auth + Leaderboard only ---------- */
-uiUpdateAuth();
-loadLeaderboard();
-// Optional projector auto-refresh
-setInterval(loadLeaderboard, 30000);
-</script>
+  <!-- Optional config first (set API URL here) -->
+  <script src="config.js"></script>
+  <!-- Main app logic -->
+  <script src="app.js"></script>
 </body>
 </html>
