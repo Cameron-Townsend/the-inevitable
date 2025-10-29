@@ -1,3 +1,5 @@
+// app.js (drop-in, guarded binds + robust unhide) — v4
+
 // --- Config ---
 const API = (window.APP_CONFIG && window.APP_CONFIG.API) || 'WEB_APP_URL_HERE';
 
@@ -51,6 +53,25 @@ const activitiesEl = document.getElementById('activities');
 const activitiesCard = document.getElementById('activitiesCard');
 const refreshBtn = document.getElementById('refreshBtn');
 
+// --- Wire buttons (guarded) ---
+if (continueBtn) continueBtn.onclick = handleContinue;
+else console.warn('[layout] Missing #continueBtn');
+
+if (loginBtn) loginBtn.onclick = () => loginOrRegister('login');
+else console.warn('[layout] Missing #loginBtn');
+
+if (registerBtn) registerBtn.onclick = () => loginOrRegister('register');
+else console.warn('[layout] Missing #registerBtn');
+
+if (backToIdBtn) backToIdBtn.onclick = showIdStep;
+if (backToIdBtn2) backToIdBtn2.onclick = showIdStep;
+
+const logoutBtnEl = document.getElementById('logoutBtn');
+if (logoutBtnEl) logoutBtnEl.onclick = logout;
+else console.warn('[layout] Missing #logoutBtn — profile panel may not appear.');
+
+if (refreshBtn) refreshBtn.onclick = () => refreshAfterAuth(true);
+
 // --- Helpers ---
 function logErr(ctx, e){ console.error('[UI]', ctx, e); }
 async function safeJson(res) {
@@ -70,16 +91,7 @@ async function sha256Hex(str){
   return b.map(x => x.toString(16).padStart(2,'0')).join('');
 }
 
-// --- Wire buttons ---
-continueBtn.onclick = handleContinue;
-loginBtn.onclick = () => loginOrRegister('login');
-registerBtn.onclick = () => loginOrRegister('register');
-backToIdBtn.onclick = showIdStep;
-backToIdBtn2.onclick = showIdStep;
-document.getElementById('logoutBtn').onclick = logout;
-refreshBtn.onclick = () => refreshAfterAuth(true);
-
-// --- Auth state & layout ---
+// --- Auth state ---
 function currentUser(){
   const u = localStorage.getItem('userId');
   const p = localStorage.getItem('pin');
@@ -90,6 +102,7 @@ function setUser(u){
   else { localStorage.removeItem('userId'); localStorage.removeItem('pin'); }
 }
 
+// --- Layout show/hide (robust) ---
 function uiUpdateAuth(){
   const must = [
     ['auth', authEl],
@@ -130,34 +143,35 @@ function uiUpdateAuth(){
 
 // --- Multi-stage auth UI ---
 function showIdStep(){
-  stepUid.hidden = false;
-  stepUid.style.removeProperty('display');
-  if (getComputedStyle(stepUid).display === 'none') stepUid.style.display = 'block';
-  stepPin.hidden = true; stepPin.style.display = 'none';
-  stepReg.hidden = true; stepReg.style.display = 'none';
-  authMsg.textContent = '';
+  if (stepUid){ stepUid.hidden = false; stepUid.style.removeProperty('display'); if (getComputedStyle(stepUid).display === 'none') stepUid.style.display = 'block'; }
+  if (stepPin){ stepPin.hidden = true; stepPin.style.display = 'none'; }
+  if (stepReg){ stepReg.hidden = true; stepReg.style.display = 'none'; }
+  if (authMsg) authMsg.textContent = '';
 }
 function showPinStep(name){
-  stepUid.hidden = true; stepUid.style.display = 'none';
-  stepPin.hidden = false;
-  stepPin.style.removeProperty('display');
-  if (getComputedStyle(stepPin).display === 'none') stepPin.style.display = 'block';
-  stepReg.hidden = true; stepReg.style.display = 'none';
-  helloNameEl.textContent = name || '';
-  authMsg.textContent = '';
-  pinEl.value = '';
-  pinEl.focus();
+  if (stepUid){ stepUid.hidden = true; stepUid.style.display = 'none'; }
+  if (stepPin){
+    stepPin.hidden = false;
+    stepPin.style.removeProperty('display');
+    if (getComputedStyle(stepPin).display === 'none') stepPin.style.display = 'block';
+  }
+  if (stepReg){ stepReg.hidden = true; stepReg.style.display = 'none'; }
+  if (helloNameEl) helloNameEl.textContent = name || '';
+  if (authMsg) authMsg.textContent = '';
+  if (pinEl){ pinEl.value = ''; pinEl.focus(); }
 }
 function showRegisterStep(){
-  stepUid.hidden = true; stepUid.style.display = 'none';
-  stepPin.hidden = true; stepPin.style.display = 'none';
-  stepReg.hidden = false;
-  stepReg.style.removeProperty('display');
-  if (getComputedStyle(stepReg).display === 'none') stepReg.style.display = 'block';
-  authMsg.textContent = '';
-  displayNameEl.value = '';
-  pinNewEl.value = '';
-  displayNameEl.focus();
+  if (stepUid){ stepUid.hidden = true; stepUid.style.display = 'none'; }
+  if (stepPin){ stepPin.hidden = true; stepPin.style.display = 'none'; }
+  if (stepReg){
+    stepReg.hidden = false;
+    stepReg.style.removeProperty('display');
+    if (getComputedStyle(stepReg).display === 'none') stepReg.style.display = 'block';
+  }
+  if (authMsg) authMsg.textContent = '';
+  if (displayNameEl) displayNameEl.value = '';
+  if (pinNewEl) pinNewEl.value = '';
+  if (displayNameEl) displayNameEl.focus();
 }
 
 // --- Pre-warm activities cache on first visit ---
@@ -176,11 +190,11 @@ function showRegisterStep(){
   }
 })();
 
-// --- Continue → checks user via POST; prefetches activities & submissions ---
+// --- Continue → check user, ensure cache, prefetch submissions ---
 async function handleContinue(){
-  const userId = (userIdEl.value||'').trim();
-  if (!userId){ authMsg.textContent='Enter a User ID.'; return; }
-  authMsg.textContent = 'Checking…';
+  const userId = (userIdEl?.value||'').trim();
+  if (!userId){ if (authMsg) authMsg.textContent='Enter a User ID.'; return; }
+  if (authMsg) authMsg.textContent = 'Checking…';
 
   try{
     const res = await fetch(API, {
@@ -188,7 +202,7 @@ async function handleContinue(){
       body: new URLSearchParams({ action:'checkuser', userId, ts: Date.now() })
     });
     const data = await safeJson(res);
-    if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
+    if (!data.ok){ if (authMsg) authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
 
     // Ensure activities cached
     const cached = readActivitiesCache();
@@ -213,7 +227,7 @@ async function handleContinue(){
     }
   }catch(e){
     logErr('handleContinue', e);
-    authMsg.innerHTML = `<span class="err">Login setup failed: ${escapeHtml(String(e.message||e))}</span>`;
+    if (authMsg) authMsg.innerHTML = `<span class="err">Login setup failed: ${escapeHtml(String(e.message||e))}</span>`;
   }
 }
 
@@ -229,14 +243,14 @@ async function prefetchSubmissions(userId){
 
 // --- Login / Register ---
 async function loginOrRegister(kind){
-  const userId = (userIdEl.value||'').trim();
-  const pin = (kind==='register' ? pinNewEl.value : pinEl.value);
-  if (!userId || !pin){ authMsg.textContent='Missing fields.'; return; }
-  authMsg.textContent='…';
+  const userId = (userIdEl?.value||'').trim();
+  const pin = (kind==='register' ? (pinNewEl?.value||'') : (pinEl?.value||''));
+  if (!userId || !pin){ if (authMsg) authMsg.textContent='Missing fields.'; return; }
+  if (authMsg) authMsg.textContent='…';
 
   const body = new URLSearchParams({ action: kind, userId, pin });
   if (kind==='register'){
-    body.set('displayName', (displayNameEl.value||userId).trim().slice(0,40));
+    body.set('displayName', (displayNameEl?.value||userId).trim().slice(0,40));
   } else {
     body.set('displayName', userId);
   }
@@ -244,7 +258,7 @@ async function loginOrRegister(kind){
   try{
     const res = await fetch(API, { method:'POST', body });
     const data = await safeJson(res);
-    if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
+    if (!data.ok){ if (authMsg) authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
 
     setUser({userId, pin});
     uiUpdateAuth();
@@ -263,13 +277,13 @@ async function loginOrRegister(kind){
     // Then do normal parallel refresh
     await refreshAfterAuth(false);
 
-    authMsg.innerHTML = (kind==='register')
+    if (authMsg) authMsg.innerHTML = (kind==='register')
       ? '<span class="ok">Registered!</span>'
       : '<span class="ok">Logged in.</span>';
 
   }catch(e){
     logErr('loginOrRegister', e);
-    authMsg.innerHTML = `<span class="err">Network error: ${escapeHtml(String(e.message||e))}</span>`;
+    if (authMsg) authMsg.innerHTML = `<span class="err">Network error: ${escapeHtml(String(e.message||e))}</span>`;
   }
 }
 
@@ -282,8 +296,8 @@ async function loadProfile(){
     const res = await fetch(API + '?action=getprofile&userId=' + encodeURIComponent(u.userId) + '&ts=' + Date.now());
     const data = await safeJson(res);
     if (data.ok){
-      balanceEl.textContent = data.balance;
-      greetingEl.textContent = `Hello, ${u.userId}`;
+      if (balanceEl) balanceEl.textContent = data.balance;
+      if (greetingEl) greetingEl.textContent = `Hello, ${u.userId}`;
     }
   }catch(e){ logErr('loadProfile', e); }
 }
@@ -291,8 +305,8 @@ async function loadLeaderboard(){
   try{
     const res = await fetch(API + '?action=leaderboard&ts=' + Date.now());
     const data = await safeJson(res);
-    boardBody.innerHTML = '';
-    if (data.ok){
+    if (boardBody) boardBody.innerHTML = '';
+    if (data.ok && boardBody){
       data.leaderboard.forEach((row,i)=>{
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${i+1}</td><td>${escapeHtml(row.name)}</td><td>${row.score}</td>`;
@@ -314,7 +328,7 @@ async function loadSubmittedSet(userId){
   return new Set();
 }
 function applySubmissionLocks(submittedSet){
-  if (!(submittedSet instanceof Set)) return;
+  if (!(submittedSet instanceof Set) || !activitiesEl) return;
   const tiles = activitiesEl.querySelectorAll('.tile');
   tiles.forEach(tile => {
     const id = tile.getAttribute('data-activity-id');
@@ -357,7 +371,7 @@ async function refreshAfterAuth(forceSync=false){
   const headPromises = [ loadProfile(), loadLeaderboard(), loadGradingMap() ];
 
   // Cache-first render if nothing visible
-  if (!activitiesEl.childElementCount){
+  if (activitiesEl && !activitiesEl.childElementCount){
     const cached = readActivitiesCache();
     if (cached?.activities) renderActivities(cached.activities, new Set());
   }
