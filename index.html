@@ -1,91 +1,98 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <!-- Let the page support both color schemes -->
-<meta name="color-scheme" content="light dark">
-
-<!-- Set theme color for light/dark (address bar color on mobile) -->
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f9fc">
-<meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#0b0f1a">
-
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Class Challenges Hub</title>
-  <link rel="stylesheet" href="style.css?v=20">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Classroom Challenges</title>
+  <link rel="stylesheet" href="style.css?v=1">
 </head>
 <body>
-  <div class="wrap">
+  <header class="site-header">
+    <h1>Classroom Challenges</h1>
+  </header>
 
-    <div class="grid">
-      <!-- AUTH CARD -->
-<div id="auth" class="card">
-  <h2>Welcome</h2>
-  <p class="muted">Enter your User ID to continue.</p>
+  <main class="container">
+    <section id="auth" class="card">
+      <h2>Login / Register</h2>
 
-  <div id="step-uid">
-    <label>User ID
-      <input id="userId" autocomplete="username" />
-    </label>
-    <div class="flex" style="margin-top:10px">
-      <button id="continueBtn">Continue</button>
-    </div>
-    <p id="authMsg" class="muted"></p>
-  </div>
-
-  <div id="step-pin" style="display:none">
-    <p class="muted">Hello, <span id="helloName"></span>. Enter your PIN.</p>
-    <label>PIN
-      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" />
-    </label>
-    <div class="flex" style="margin-top:10px">
-      <button id="loginBtn">Login</button>
-      <button id="backToIdBtn" class="btn-gray">Back</button>
-    </div>
-  </div>
-
-  <div id="step-register" style="display:none">
-    <p class="muted">New user. Create your display name & PIN.</p>
-    <label>Display Name
-      <input id="displayName" maxlength="40" />
-    </label>
-    <label>PIN
-      <input id="pinNew" type="password" inputmode="numeric" autocomplete="new-password" />
-    </label>
-    <div class="flex" style="margin-top:10px">
-      <button id="registerBtn">Register</button>
-      <button id="backToIdBtn2" class="btn-gray">Back</button>
-    </div>
-  </div>
-</div>
-
-
-      <!-- Leaderboard (always visible) -->
-      <div class="card">
-        <h2>Leaderboard (Top 20)</h2>
-        <table>
-          <thead><tr><th>#</th><th>Name</th><th>Currency</th></tr></thead>
-          <tbody id="boardBody"></tbody>
-        </table>
-        <p class="muted">Updates when scores are submitted.</p>
+      <!-- Step 1: User ID -->
+      <div id="step-uid">
+        <label for="userId">User ID</label>
+        <input id="userId" type="text" placeholder="e.g., cjtownsend" autocomplete="username" />
+        <div class="row gap">
+          <button id="continueBtn" class="btn primary">Continue</button>
+        </div>
       </div>
-    </div>
 
-    <div class="space"></div>
-
-    <!-- Activities (hidden until login) -->
-    <div class="card" id="activitiesCard" style="display:none;">
-      <div class="row">
-        <h2>Today’s Activities</h2>
-        <button id="refreshBtn" title="Reload activities">Refresh</button>
+      <!-- Step 2: PIN for existing user -->
+      <div id="step-pin" hidden>
+        <p>Hello, <strong id="helloName"></strong>. Enter your PIN.</p>
+        <label for="pin">PIN</label>
+        <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" />
+        <div class="row gap">
+          <button id="loginBtn" class="btn primary">Login</button>
+          <button id="backToIdBtn" class="btn">Back</button>
+        </div>
       </div>
-      <div id="activities" class="grid"></div>
-    </div>
 
-  </div>
+      <!-- Step 3: Registration -->
+      <div id="step-register" hidden>
+        <p>New here? Create your profile.</p>
+        <label for="displayName">Display name</label>
+        <input id="displayName" type="text" maxlength="40" placeholder="Your name" />
+        <label for="pinNew">Choose a PIN</label>
+        <input id="pinNew" type="password" inputmode="numeric" autocomplete="new-password" />
+        <div class="row gap">
+          <button id="registerBtn" class="btn success">Register</button>
+          <button id="backToIdBtn2" class="btn">Back</button>
+        </div>
+      </div>
 
-  <!-- Optional config first (set API URL here) -->
-  <script src="config.js?v=20"></script>
-  <!-- Main app logic -->
-  <script src="app.js?v=20"></script>
+      <p id="authMsg" class="muted" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="main-col">
+      <header id="profile" class="card row between center" hidden>
+        <div>
+          <div id="greeting" class="greeting">Hello</div>
+          <div class="muted">Balance: <span id="balance">0</span> 🪙</div>
+        </div>
+        <div class="row gap">
+          <button id="logoutBtn" class="btn">Logout</button>
+        </div>
+      </header>
+
+      <section id="activitiesCard" class="card" hidden>
+        <div class="row between center">
+          <h2>Activities</h2>
+          <button id="refreshBtn" class="btn icon" title="Refresh" aria-label="Refresh">⟳</button>
+        </div>
+        <div id="activities" class="tiles"></div>
+      </section>
+    </section>
+
+    <aside id="leaderboardCard" class="card">
+      <div class="row between center">
+        <h2>Leaderboard</h2>
+      </div>
+      <table class="table">
+        <thead>
+          <tr><th>#</th><th>Name</th><th>Score</th></tr>
+        </thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <small class="muted">© <span id="year"></span> Classroom Challenges</small>
+  </footer>
+
+  <script>
+    // Simple year set
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+  <script src="config.js?v=1"></script>
+  <script src="app.js?v=1"></script>
 </body>
 </html>
