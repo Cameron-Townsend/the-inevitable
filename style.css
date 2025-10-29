@@ -86,3 +86,25 @@ th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
 
 /* ✅ Grayed-out, locked tiles after submission */
 .tile.disabled { opacity: 0.55; filter: grayscale(0.2); }
+
+/* === Login / Auth Section Polishing === */
+#auth label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+#auth input {
+  margin-top: 4px;
+}
+
+#auth .flex {
+  margin-top: 12px;   /* space above buttons */
+  gap: 10px;          /* space between Login/Register buttons */
+  justify-content: flex-start;
+}
+
+#auth button {
+  flex: 1;
+  min-width: 90px;
+}
+
