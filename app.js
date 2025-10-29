@@ -260,3 +260,246 @@ async function sha256Hex(str){
   const b = Array.from(new Uint8Array(buf));
   return b.map(x => x.toString(16).padStart(2,'0')).join('');
 }
+// --- Submissions ---
+async function loadSubmittedSet(userId){
+  try{
+    const res = await fetch(API + '?action=getsubmissions&userId=' + encodeURIComponent(userId) + '&ts=' + Date.now());
+    const data = await safeJson(res);
+    if (data.ok){
+      return new Set(data.submissions.map(s => s.activityId));
+    }
+  }catch(e){ logErr('loadSubmittedSet', e); }
+  return new Set();
+}
+
+function applySubmissionLocks(submittedSet){
+  if (!(submittedSet instanceof Set)) return;
+  const tiles = activitiesEl.querySelectorAll('.tile');
+  tiles.forEach(tile => {
+    const id = tile.getAttribute('data-activity-id');
+    if (!id) return;
+    if (submittedSet.has(id)){
+      tile.classList.add('disabled');
+      tile.querySelector('textarea')?.setAttribute('disabled','');
+      const btn = tile.querySelector('button.submit');
+      if (btn){ btn.disabled = true; btn.textContent='Submitted'; }
+      const res = tile.querySelector('.result');
+      if (res && !res.textContent.trim()) res.textContent = 'You already submitted this activity.';
+    }
+  });
+}
+
+// --- Activities cache utils ---
+function readActivitiesCache(){
+  try{
+    const raw = localStorage.getItem(ACT_CACHE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || !o.activities || !o.signature) return null;
+    if ((Date.now() - (o.ts || 0)) > ACT_CACHE_TTL_MS) return null;
+    return o;
+  }catch(e){ return null; }
+}
+
+function writeActivitiesCache(activities, signature){
+  const o = { ts: Date.now(), signature, activities };
+  localStorage.setItem(ACT_CACHE_KEY, JSON.stringify(o));
+}
+
+async function activitiesSignature(activities){
+  const key = activities.map(a => [a.activityId, a.title, a.prompt, a.points, a.openIso, a.closeIso]);
+  return await sha256Hex(JSON.stringify(key));
+}
+
+// --- Full refresh (parallel) ---
+async function refreshAfterAuth(forceSync=false){
+  const u = currentUser(); if(!u) return;
+
+  const headPromises = [ loadProfile(), loadLeaderboard(), loadGradingMap() ];
+
+  // Cache-first render if nothing visible
+  if (!activitiesEl.childElementCount){
+    const cached = readActivitiesCache();
+    if (cached?.activities) renderActivities(cached.activities, new Set());
+  }
+
+  // Fetch submissions & activities in parallel
+  const subsPromise = loadSubmittedSet(u.userId).then(set => { applySubmissionLocks(set); return set; });
+
+  const cached = readActivitiesCache();
+  const needServer = forceSync || !cached;
+
+  beginBusy();
+  try{
+    const r = await fetch(API + '?action=getactivities&ts=' + Date.now());
+    const d = await safeJson(r);
+    if (d.ok){
+      const sig = await activitiesSignature(d.activities||[]);
+      if (!cached || sig !== cached.signature){
+        writeActivitiesCache(d.activities||[], sig);
+        renderActivities(d.activities||[], new Set());
+        const set = await subsPromise.catch(()=>new Set());
+        applySubmissionLocks(set);
+      } else if (needServer){
+        renderActivities(d.activities||[], new Set());
+        const set = await subsPromise.catch(()=>new Set());
+        applySubmissionLocks(set);
+      }
+    }
+  }catch(e){ logErr('refreshAfterAuth:getactivities', e); } finally { endBusy(); }
+
+  await Promise.allSettled(headPromises);
+}
+
+// --- Activities render + tile behavior ---
+function renderActivities(acts, submittedSet){
+  activitiesEl.innerHTML = '';
+  if (acts && acts.length){
+    acts.forEach(a => activitiesEl.appendChild(activityTile(a, submittedSet)));
+  } else {
+    activitiesEl.innerHTML = '<p class="muted">No open activities right now.</p>';
+  }
+}
+
+function activityTile(a, submittedSet){
+  const alreadySubmitted = submittedSet.has(a.activityId);
+  const div = document.createElement('div');
+  div.className = 'card tile' + (alreadySubmitted ? ' disabled' : '');
+  div.setAttribute('data-activity-id', a.activityId || '');
+
+  div.innerHTML = `
+    <h3>${escapeHtml(a.title)}</h3>
+    <p class="muted">${escapeHtml(a.prompt || '')}</p>
+    <div class="flex"><span class="badge">${a.points||0} 🪙</span></div>
+    <label>Your Answer
+      <textarea rows="2" class="answer" ${alreadySubmitted ? 'disabled' : ''}></textarea>
+    </label>
+    <button class="submit" ${alreadySubmitted ? 'disabled' : ''}>${alreadySubmitted ? 'Submitted' : 'Submit'}</button>
+    <p class="muted result">${alreadySubmitted ? 'You already submitted this activity.' : ''}</p>
+  `;
+
+  if (!alreadySubmitted){
+    const ans = div.querySelector('.answer');
+    const btn = div.querySelector('.submit');
+    const res = div.querySelector('.result');
+
+    btn.onclick = async () => {
+      const u = currentUser();
+      if (!u){ alert('Please login first.'); return; }
+      const answer = ans.value.trim();
+      if (!answer){ alert('Enter an answer.'); return; }
+
+      // Local instant grading
+      let displayedNeutral = false;
+      const h = GRADING.hashes[a.activityId];
+      if (GRADING.salt && h){
+        const userHash = await sha256Hex(GRADING.salt + normalizeAnswer(answer));
+        if (userHash === h) {
+          const awardGuess = (a.points || GRADING.points[a.activityId] || 0);
+          res.innerHTML = `<span class="ok">Correct! +${awardGuess} 🪙</span>`;
+          showStatus(div, 'ok', 'Correct!');
+        } else {
+          res.innerHTML = `<span class="err">Not quite. Checking…</span>`;
+          showStatus(div, 'err', 'Not quite');
+        }
+      } else {
+        displayedNeutral = true;
+        res.innerHTML = `<span class="muted">Submitting…</span>`;
+        showStatus(div, 'warn', 'Submitted');
+      }
+
+      // Busy
+      btn.disabled = true; ans.disabled = true; setTileBusy(div, true);
+
+      try{
+        const r = await fetch(API, { method:'POST', body: new URLSearchParams({
+          action:'submitAnswer', userId:u.userId, pin:u.pin, activityId:a.activityId, answer
+        })});
+        const d = await safeJson(r);
+
+        if (d.ok){
+          const award = Number(d.pointsAwarded||0);
+          if (d.correct === true){ res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`; showStatus(div,'ok',`+${award} 🪙`); }
+          else if (d.correct === false){ res.innerHTML = `<span class="err">Not quite. Keep trying!</span>`; showStatus(div,'err','Not quite'); }
+          else { res.innerHTML = `<span class="muted">Submitted for review.</span>`; if (!displayedNeutral) showStatus(div,'warn','Submitted'); }
+
+          if (typeof d.newBalance === 'number') balanceEl.textContent = d.newBalance;
+          else loadProfile();
+
+          btn.disabled = true; ans.disabled = true; btn.textContent = 'Submitted';
+          div.classList.add('disabled'); loadLeaderboard();
+        } else {
+          if (d.error === 'already_submitted'){
+            res.innerHTML = '<span class="muted">Already submitted previously.</span>';
+            btn.disabled = true; ans.disabled = true; btn.textContent='Submitted';
+            div.classList.add('disabled'); showStatus(div,'warn','Already submitted');
+          } else {
+            res.innerHTML = `<span class="err">Error: ${escapeHtml(d.error)}</span>`;
+            btn.disabled = false; ans.disabled = false; btn.textContent='Submit';
+            setTileBusy(div,false); clearStatus(div); return;
+          }
+        }
+      }catch(e){
+        logErr('submitAnswer', e);
+        res.innerHTML = `<span class="err">Network error: ${escapeHtml(String(e.message||e))}</span>`;
+        btn.disabled = false; ans.disabled = false; btn.textContent='Submit';
+        setTileBusy(div,false); clearStatus(div); return;
+      }
+
+      setTileBusy(div,false);
+    };
+  }
+
+  return div;
+}
+
+// --- Status & busy helpers ---
+function showStatus(div, kind, text){
+  clearStatus(div);
+  const mask = document.createElement('div');
+  mask.className = 'status-mask ' + (kind==='ok' ? 'status-ok' : kind==='err' ? 'status-err' : 'status-warn');
+  mask.textContent = text || '';
+  div.appendChild(mask);
+}
+function clearStatus(div){ div.querySelector('.status-mask')?.remove(); }
+
+function setTileBusy(div, isBusy){
+  if (isBusy) {
+    if (!div.querySelector('.busy-mask')) {
+      const mask = document.createElement('div');
+      mask.className = 'busy-mask';
+      mask.innerHTML = '<div class="busy-spinner" aria-label="Working…"></div>';
+      div.style.position = 'relative';
+      div.appendChild(mask);
+    }
+    div.classList.add('busy'); div.setAttribute('aria-busy','true');
+  } else {
+    div.querySelector('.busy-mask')?.remove();
+    div.classList.remove('busy'); div.removeAttribute('aria-busy');
+  }
+}
+
+// --- Grading map ---
+async function loadGradingMap(){
+  try{
+    const res = await fetch(API + '?action=getgradingmap&ts=' + Date.now());
+    const data = await safeJson(res);
+    if (data.ok){
+      GRADING.salt = data.salt; GRADING.hashes = {}; GRADING.points = {};
+      (data.map||[]).forEach(({activityId, hash, points})=>{
+        if (activityId && hash){ GRADING.hashes[activityId]=hash; GRADING.points[activityId]=points||0; }
+      });
+    }
+  }catch(e){ logErr('loadGradingMap', e); }
+}
+
+// --- Initialize ---
+uiUpdateAuth();
+loadLeaderboard();
+setInterval(loadLeaderboard, 30000);
+
+if (currentUser()) {
+  const cached = readActivitiesCache();
+  if (cached?.activities) renderActivities(cached.activities, new Set());
+  refreshAfterAuth(false);
+}
