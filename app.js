@@ -1,6 +1,21 @@
 // --- Config ---
 const API = (window.APP_CONFIG && window.APP_CONFIG.API) || 'WEB_APP_URL_HERE';
 
+// --- Busy helpers (must be defined before anything uses them) ---
+var _busyRefCount = 0;
+function beginBusy(){
+  _busyRefCount++;
+  const b = document.getElementById('refreshBtn');
+  if (b) b.classList.add('btn-busy');
+}
+function endBusy(){
+  _busyRefCount = Math.max(0, _busyRefCount - 1);
+  if (_busyRefCount === 0) {
+    const b = document.getElementById('refreshBtn');
+    if (b) b.classList.remove('btn-busy');
+  }
+}
+
 // --- Client-side pregrading ---
 let GRADING = { salt: null, hashes: {}, points: {} };
 
@@ -107,11 +122,6 @@ function showRegisterStep(){
   pinNewEl.value = '';
   displayNameEl.focus();
 }
-
-// --- Busy ref-counter for refresh spinner ---
-let _busyRefCount = 0;
-function beginBusy(){ _busyRefCount++; refreshBtn?.classList.add('btn-busy'); }
-function endBusy(){ _busyRefCount = Math.max(0,_busyRefCount-1); if (_busyRefCount===0) refreshBtn?.classList.remove('btn-busy'); }
 
 // --- Pre-warm activities cache on first visit ---
 (async function prewarmActivities(){
