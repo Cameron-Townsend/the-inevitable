@@ -1,121 +1,153 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Multi-Code Secret Reveal (Classroom Demo)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Class Activity</title>
 <style>
-  body{font-family:system-ui,Arial,Segoe UI;display:flex;min-height:100vh;align-items:center;justify-content:center;
-       background:#f4f7fb;margin:0;padding:20px}
-  .card{background:white;padding:20px;border-radius:10px;box-shadow:0 8px 30px rgba(17,24,39,0.08);width:360px;max-width:100%}
-  input{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #dde6f2;box-sizing:border-box}
-  button{margin-top:12px;padding:10px;border-radius:8px;border:none;background:#2563eb;color:white;width:100%;cursor:pointer}
-  #results{margin-top:14px;display:none}
-  .secret{background:#eef6ff;border:1px solid #d3e8ff;padding:10px;border-radius:8px;margin-top:8px}
-  .note{font-size:12px;color:#6b7280;margin-top:8px}
+  body { font-family: system-ui, Arial; background:#f7f9fc; margin: 0; padding: 24px; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .card { background:#fff; padding:20px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.06); }
+  h1 { margin:0 0 12px; }
+  label { display:block; margin:10px 0 6px; }
+  input, button { padding:10px; font-size:16px; }
+  input { width:100%; border:1px solid #d9e1ee; border-radius:8px; box-sizing:border-box; }
+  button { border:0; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; }
+  button[disabled] { background:#9db5f1; cursor:not-allowed; }
+  .msg { margin:12px 0; padding:12px; background:#eef6ff; border:1px solid #d3e8ff; border-radius:8px; display:none; }
+  .row { display:grid; grid-template-columns: 1fr auto; gap:8px; }
+  table { width:100%; border-collapse:collapse; margin-top:14px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid #eef2f7; }
+  .hint { font-size:12px; color:#6b7280; margin-top:8px; }
+  .section { margin-top:18px; }
 </style>
 </head>
 <body>
-  <div class="card" role="main" aria-labelledby="title">
-    <h2 id="title">Enter Code to Reveal Secret</h2>
-    <label for="code">Code</label>
-    <input id="code" type="password" placeholder="Enter classroom code (e.g. 1234)" autocomplete="off" />
-    <button id="go">Reveal</button>
+<div class="wrap">
+  <div class="card">
+    <h1>Enter Code</h1>
+    <div class="row">
+      <input id="code" type="password" placeholder="Enter your activity code">
+      <button id="unlockBtn">Unlock</button>
+    </div>
+    <div id="secretBox" class="msg" aria-live="polite"></div>
 
-    <div id="results" aria-live="polite">
-      <div id="foundList"></div>
+    <div id="scoreSection" class="section" style="display:none;">
+      <h2>Submit Score</h2>
+      <label for="name">Name (nickname is fine)</label>
+      <input id="name" maxlength="40" placeholder="e.g., StarCoder27">
+      <label for="score">Score</label>
+      <input id="score" type="number" min="0" value="0">
+      <button id="submitScoreBtn">Submit</button>
+      <p class="hint">We store only nickname + score + code used.</p>
     </div>
 
-    <p class="note">Teacher note: this is a demo meant to deter casual snooping. A determined student who examines JS + runs the decode can still retrieve messages.</p>
+    <div class="section">
+      <h2>Leaderboard (Top 20)</h2>
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Score</th></tr></thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+    </div>
   </div>
+</div>
 
 <script>
-/*
-  PRECONFIGURED encoded secrets:
-  - Each entry is a Base64-encoded blob which was produced by XORing the plaintext (UTF-8)
-    with SHA-256(password) (repeated).
-  - If decode produces text that begins with "SECRET:", we reveal it.
-  - To add/change secrets: generate new Base64 blobs using the Python snippet in the teacher notes below.
-*/
+const API = 'https://script.google.com/macros/s/AKfycbxFq4HE5WozTRFPCaIciZOGrkm6JskEYV3FSjjpEaM5OvuxnLL2vQIQD1sSwsUgMh9q1Q/exec'; // ← paste your Apps Script Web App URL
 
-/* ===== Example entries (already encoded) =====
-   passwords -> secrets
-   "1234" -> "SECRET: Hello World!"
-   "abcd" -> "SECRET: You opened vault 2"
-   "2025" -> "SECRET: Nice work, teacher!"
-*/
-const encodedSecrets = [
-  {id: "vaultA", blob: "UOkkEFOn23w+e43JjXWnCOdaR+k="},
-  {id: "vaultB", blob: "25FlPZGyCa1K1zDcnfky80X4qQ5CzE0Jg9M="},
-  {id: "vaultC", blob: "4feyVpZ4WalNiDLMknoBVd8xrHjhrucwFv2i"}
-];
+const codeInput = document.getElementById('code');
+const unlockBtn = document.getElementById('unlockBtn');
+const secretBox = document.getElementById('secretBox');
+const scoreSection = document.getElementById('scoreSection');
+const nameInput = document.getElementById('name');
+const scoreInput = document.getElementById('score');
+const submitScoreBtn = document.getElementById('submitScoreBtn');
+const boardBody = document.getElementById('boardBody');
 
-const btn = document.getElementById('go');
-const input = document.getElementById('code');
-const results = document.getElementById('results');
-const foundList = document.getElementById('foundList');
+let lastUnlockedCode = '';
 
-btn.addEventListener('click', tryReveal);
-input.addEventListener('keydown', (e)=> { if(e.key === 'Enter') tryReveal(); });
+unlockBtn.addEventListener('click', unlock);
+codeInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') unlock(); });
+submitScoreBtn.addEventListener('click', submitScore);
 
-async function tryReveal(){
-  const code = (input.value || "").trim();
-  if(!code){ alert("Please enter a code."); return; }
-
-  // compute SHA-256 digest of input code
-  const key = await sha256(code); // Uint8Array(32)
-  let anyFound = false;
-  foundList.innerHTML = '';
-
-  for(const entry of encodedSecrets){
-    try {
-      const encBytes = base64ToUint8Array(entry.blob);
-      const plain = xorWithKey(encBytes, key);
-      const text = new TextDecoder().decode(plain);
-      if(text && text.startsWith("SECRET:")){
-        anyFound = true;
-        const revealed = text.slice(7).trim();
-        const box = document.createElement('div');
-        box.className = 'secret';
-        box.textContent = revealed;
-        foundList.appendChild(box);
-      }
-    } catch(e) {
-      // decode error, skip
+async function unlock() {
+  const code = codeInput.value.trim();
+  if (!code) { alert('Enter a code'); return; }
+  setBusy(unlockBtn, true);
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'unlock', code })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      lastUnlockedCode = code;
+      secretBox.style.display = 'block';
+      secretBox.textContent = data.message;
+      scoreSection.style.display = 'block';
+    } else {
+      secretBox.style.display = 'none';
+      scoreSection.style.display = 'none';
+      alert('No message for that code. Try again.');
     }
-  }
-
-  if(anyFound){
-    results.style.display = 'block';
-  } else {
-    results.style.display = 'none';
-    alert("No secret for that code. Try again.");
+  } catch (e) {
+    alert('Network error. Try again.');
+  } finally {
+    setBusy(unlockBtn, false);
   }
 }
 
-/* ===== Utility functions ===== */
-async function sha256(message){
-  const enc = new TextEncoder();
-  const data = enc.encode(message);
-  const buf = await crypto.subtle.digest('SHA-256', data);
-  return new Uint8Array(buf);
-}
-
-function base64ToUint8Array(b64){
-  const binary = atob(b64);
-  const len = binary.length;
-  const arr = new Uint8Array(len);
-  for(let i=0;i<len;i++) arr[i] = binary.charCodeAt(i);
-  return arr;
-}
-
-function xorWithKey(data, key){
-  const out = new Uint8Array(data.length);
-  for(let i=0;i<data.length;i++){
-    out[i] = data[i] ^ key[i % key.length];
+async function submitScore() {
+  const name = nameInput.value.trim();
+  const score = Number(scoreInput.value || 0);
+  if (!name) { alert('Please enter a name or nickname.'); return; }
+  if (!lastUnlockedCode) { alert('Unlock a code first.'); return; }
+  setBusy(submitScoreBtn, true);
+  try {
+    await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'submitScore', name, score, code: lastUnlockedCode })
+    });
+    scoreInput.value = '0';
+    await loadLeaderboard();
+    alert('Score submitted!');
+  } catch (e) {
+    alert('Network error. Try again.');
+  } finally {
+    setBusy(submitScoreBtn, false);
   }
-  return out;
 }
+
+async function loadLeaderboard() {
+  try {
+    const res = await fetch(API + '?action=leaderboard');
+    const data = await res.json();
+    boardBody.innerHTML = '';
+    if (data.ok) {
+      data.leaderboard.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${i+1}</td><td>${escapeHtml(row.name)}</td><td>${row.score}</td>`;
+        boardBody.appendChild(tr);
+      });
+    }
+  } catch (e) {
+    // ignore load error for now
+  }
+}
+
+function escapeHtml(s){
+  const p = document.createElement('p');
+  p.textContent = s;
+  return p.innerHTML;
+}
+function setBusy(btn, busy){
+  btn.disabled = !!busy;
+  btn.textContent = busy ? 'Please wait…' : btn === unlockBtn ? 'Unlock' : 'Submit';
+}
+
+loadLeaderboard(); // show leaderboard to every visitor on page load
 </script>
 </body>
 </html>
