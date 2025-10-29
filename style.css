@@ -1,49 +1,78 @@
-/* === Ultraviolet Catastrophe Color System === */
+/* === Ultraviolet Catastrophe Color System (no glow) === */
 :root {
   /* LIGHT MODE (default) */
   --bg: #F6F5FB;
   --card: #FFFFFF;
   --ink: #1E1A32;
   --muted: #7C7A8B;
-  --brand: #7C3AED;
-  --ok: #38BDF8;
-  --warn: #FB7185;
+  --brand: #7C3AED;   /* violet */
+  --ok: #38BDF8;      /* cyan */
+  --warn: #FB7185;    /* rose */
   --border: #E0E0F2;
-  --shadow: 0 4px 16px rgba(124,58,237,0.12);
+  --shadow: 0 8px 24px rgba(0,0,0,.06);  /* neutral shadow */
 }
 
-/* === AUTO Dark Mode (system preference) === */
+/* Auto dark mode (system) */
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0C0B14;
     --card: #151427;
     --ink: #E7E3FF;
     --muted: #A29BC1;
-    --brand: #A78BFA;
+    --brand: #A78BFA;   /* softer lavender in dark mode */
     --ok: #22D3EE;
     --warn: #FCA5A5;
     --border: #2B2A3D;
-    --shadow: 0 4px 16px rgba(167,139,250,0.25);
+    --shadow: 0 8px 24px rgba(0,0,0,.45); /* neutral dark shadow */
   }
 }
 
-/* Optional manual overrides for theme toggle */
+/* Optional manual overrides (if you add a theme toggle later) */
 :root[data-theme="light"] {
-  --bg: #F6F5FB; --card: #FFFFFF; --ink: #1E1A32; --muted: #7C7A8B;
-  --brand: #7C3AED; --ok: #38BDF8; --warn: #FB7185; --border: #E0E0F2;
-  --shadow: 0 4px 16px rgba(124,58,237,0.12);
+  --bg:#F6F5FB; --card:#FFFFFF; --ink:#1E1A32; --muted:#7C7A8B;
+  --brand:#7C3AED; --ok:#38BDF8; --warn:#FB7185; --border:#E0E0F2; --shadow:0 8px 24px rgba(0,0,0,.06);
 }
 :root[data-theme="dark"] {
-  --bg: #0C0B14; --card: #151427; --ink: #E7E3FF; --muted: #A29BC1;
-  --brand: #A78BFA; --ok: #22D3EE; --warn: #FCA5A5; --border: #2B2A3D;
-  --shadow: 0 4px 16px rgba(167,139,250,0.25);
+  --bg:#0C0B14; --card:#151427; --ink:#E7E3FF; --muted:#A29BC1;
+  --brand:#A78BFA; --ok:#22D3EE; --warn:#FCA5A5; --border:#2B2A3D; --shadow:0 8px 24px rgba(0,0,0,.45);
 }
 
-/* Optional luminous card glow for dark mode */
-@media (prefers-color-scheme: dark) {
-  .card {
-    backdrop-filter: blur(8px);
-    background: rgba(21, 20, 39, 0.9);
-    box-shadow: var(--shadow), 0 0 12px rgba(167,139,250,0.2);
-  }
-}
+/* === Base layout (unchanged) === */
+body { margin:0; font-family:system-ui, Arial, sans-serif; background:var(--bg); color:var(--ink); }
+.wrap { max-width:980px; margin:0 auto; padding:24px; }
+.grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); }
+
+/* ✅ Revert card style: no glow, no backdrop filter */
+.card { background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); padding:16px; }
+
+/* Inputs */
+label { display:block; font-size:14px; margin-top:8px; }
+input, textarea { width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; box-sizing:border-box; font-size:16px; background:transparent; color:var(--ink); }
+
+/* ✅ Revert buttons: flat, simple, brand-colored */
+button { padding:10px 12px; border:0; border-radius:8px; background:var(--brand); color:#fff; cursor:pointer; transition:filter .15s ease; }
+button:hover { filter: brightness(0.95); }
+button[disabled]{ filter: grayscale(0.2) brightness(0.9); cursor:not-allowed; }
+.btn-gray { margin-top:8px; background:var(--muted); color:#fff; }
+
+/* Other utilities */
+h1,h2 { margin:0 0 10px; }
+.row { display:grid; grid-template-columns: 1fr auto; gap:8px; }
+.muted { color:var(--muted); font-size:12px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:999px; background:#F1EEFF; color:var(--ink); font-size:12px; border:1px solid var(--border); }
+@media (prefers-color-scheme: dark) { .badge { background:#1E1C33; } }
+
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
+
+.tile { display:flex; flex-direction:column; gap:8px; }
+.tile h3 { margin:0; }
+.flex { display:flex; gap:8px; align-items:center; }
+.space { height:14px; }
+
+/* Grayed-out after submission */
+.tile.disabled { opacity:0.55; filter:grayscale(0.2); }
+
+/* Login spacing polish (kept) */
+#auth .flex { margin-top:12px; gap:10px; justify-content:flex-start; }
+#auth button { flex:1; min-width:90px; }
