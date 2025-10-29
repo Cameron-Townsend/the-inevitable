@@ -76,3 +76,30 @@ th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
 /* Login spacing polish (kept) */
 #auth .flex { margin-top:12px; gap:10px; justify-content:flex-start; }
 #auth button { flex:1; min-width:90px; }
+
+/* Per-tile busy state */
+.tile {
+  position: relative;
+}
+.tile.busy {
+  opacity: 0.9;
+}
+.tile .busy-mask {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.04); /* auto-adapts in dark mode because we don't recolor text */
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  pointer-events: all; /* block interaction */
+}
+@media (prefers-color-scheme: dark){
+  .tile .busy-mask { background: rgba(255,255,255,0.05); }
+}
+.busy-spinner {
+  width: 22px; height: 22px;
+  border: 3px solid var(--border);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
