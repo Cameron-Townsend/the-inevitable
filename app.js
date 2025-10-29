@@ -1,6 +1,9 @@
 // --- Config ---
 const API = (window.APP_CONFIG && window.APP_CONFIG.API) || 'WEB_APP_URL_HERE';
 
+// --- Global state for client-side pregrading ---
+let GRADING = { salt: null, hashes: {}, points: {} };
+
 // --- DOM refs ---
 const authEl = document.getElementById('auth');
 const profileEl = document.getElementById('profile');
@@ -68,15 +71,7 @@ async function loginOrRegister(kind){
 }
 function logout(){ setUser(null); uiUpdateAuth(); }
 
-// --- Coordinated refresh after login ---
-async function refreshAfterAuth(){
-  const u = currentUser(); if(!u) return;
-  await Promise.all([ loadProfile(), loadLeaderboard() ]);
-  const submittedSet = await loadSubmittedSet(u.userId);
-  await loadActivities(submittedSet);
-}
-
-// --- Profile / Leaderboard / Activities ---
+// --- Data loads ---
 async function loadProfile(){
   const u = currentUser(); if(!u) return;
   try{
@@ -131,6 +126,34 @@ async function loadActivities(submittedSet = new Set()){
   }
 }
 
+// --- Preload grading map (salt + hashed answers) ---
+async function loadGradingMap(){
+  try{
+    const res = await fetch(API + '?action=getgradingmap&ts=' + Date.now());
+    const data = await res.json();
+    if (data.ok){
+      GRADING.salt = data.salt;
+      GRADING.hashes = {};
+      GRADING.points = {};
+      (data.map || []).forEach(({activityId, hash, points})=>{
+        if (activityId && hash){
+          GRADING.hashes[activityId] = hash;
+          GRADING.points[activityId] = points || 0;
+        }
+      });
+    }
+  }catch(e){}
+}
+
+// --- Coordinated refresh after login ---
+async function refreshAfterAuth(){
+  const u = currentUser(); if(!u) return;
+  await Promise.all([ loadProfile(), loadLeaderboard(), loadGradingMap() ]);
+  const submittedSet = await loadSubmittedSet(u.userId);
+  await loadActivities(submittedSet);
+}
+
+// --- Tile rendering with optimistic submit ---
 function activityTile(a, submittedSet){
   const alreadySubmitted = submittedSet.has(a.activityId);
   const div = document.createElement('div');
@@ -158,7 +181,26 @@ function activityTile(a, submittedSet){
       const answer = ans.value.trim();
       if (!answer){ alert('Enter an answer.'); return; }
 
-      btn.disabled = true; btn.textContent = 'Submitting…'; // fixed boolean
+      // 1) Local instant check (if we have a hash)
+      let localCorrect = null;
+      const h = GRADING.hashes[a.activityId];
+      if (GRADING.salt && h){
+        const userHash = await sha256Hex(GRADING.salt + normalizeAnswer(answer));
+        localCorrect = (userHash === h);
+        if (localCorrect === true) {
+          const awardGuess = (a.points || GRADING.points[a.activityId] || 0);
+          res.innerHTML = `<span class="ok">Correct! +${awardGuess} 🪙</span>`;
+        } else {
+          res.innerHTML = `<span class="muted">Submitting for grading…</span>`;
+        }
+      } else {
+        res.innerHTML = `<span class="muted">Submitting…</span>`;
+      }
+
+      // 2) Lock UI during submit
+      btn.disabled = true; btn.textContent = 'Submitting…';
+
+      // 3) Send to server (source of truth)
       try{
         const r = await fetch(API, {
           method:'POST',
@@ -169,6 +211,7 @@ function activityTile(a, submittedSet){
         const d = await r.json();
 
         if (d.ok){
+          // Reconcile with server
           const award = Number(d.pointsAwarded||0);
           if (d.correct === true){
             res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`;
@@ -177,15 +220,24 @@ function activityTile(a, submittedSet){
           } else {
             res.innerHTML = `<span class="muted">Submitted for review.</span>`;
           }
-          if (award>0){ await loadProfile(); await loadLeaderboard(); }
-          // Lock tile immediately
+
+          // Update balance instantly from server
+          if (typeof d.newBalance === 'number'){
+            balanceEl.textContent = d.newBalance;
+          } else {
+            loadProfile(); // fallback
+          }
+
+          // Lock tile permanently
           btn.disabled = true;
           btn.textContent = 'Submitted';
           ans.disabled = true;
           div.classList.add('disabled');
-          res.insertAdjacentText('beforeend', ' (This activity is now locked for you.)');
+
+          // Background leaderboard refresh
+          loadLeaderboard();
+
         } else {
-          // If server enforces no-resubmit, lock the tile here too
           if (d.error === 'already_submitted') {
             btn.disabled = true;
             btn.textContent = 'Submitted';
@@ -209,13 +261,20 @@ function activityTile(a, submittedSet){
 
 // --- Utilities ---
 function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''; return p.innerHTML; }
+function normalizeAnswer(s){ return (s||'').trim().toLowerCase(); }
+async function sha256Hex(str){
+  const enc = new TextEncoder().encode(str);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  const b = Array.from(new Uint8Array(buf));
+  return b.map(x => x.toString(16).padStart(2,'0')).join('');
+}
 
 // --- Initial landing: Auth + Leaderboard only ---
 uiUpdateAuth();
 loadLeaderboard();
 setInterval(loadLeaderboard, 30000); // optional projector refresh
 
-// If a user is already logged in, immediately load their submissions + activities
+// If a user is already logged in, immediately load their submissions + activities + grading map
 if (currentUser()) {
   refreshAfterAuth();
 }
