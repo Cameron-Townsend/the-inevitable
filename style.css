@@ -103,3 +103,47 @@ th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* === Tile Busy Overlay & Spinner (already added earlier, kept here for completeness) === */
+.tile { position: relative; }
+.tile.busy { opacity: 0.9; }
+.tile .busy-mask {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: 12px; background: rgba(0,0,0,0.04); pointer-events: all; z-index: 5;
+}
+@media (prefers-color-scheme: dark){ .tile .busy-mask { background: rgba(255,255,255,0.05); } }
+.busy-spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--brand);
+  border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* === Per-tile Status Overlay (green / red / yellow) === */
+.tile .status-mask {
+  position: absolute; inset: 0; display:flex; align-items:center; justify-content:center;
+  border-radius: 12px; z-index: 6; pointer-events: none;
+  font-weight: 600; letter-spacing: .2px;
+}
+.status-ok   { background: rgba(16,185,129,0.12);  color: #0b8e64; box-shadow: 0 0 0 2px rgba(16,185,129,0.35) inset; }
+.status-err  { background: rgba(239,68,68,0.12);   color: #b91c1c; box-shadow: 0 0 0 2px rgba(239,68,68,0.35) inset; }
+.status-warn { background: rgba(245,158,11,0.12);  color: #92400e; box-shadow: 0 0 0 2px rgba(245,158,11,0.35) inset; }
+
+@media (prefers-color-scheme: dark){
+  .status-ok   { background: rgba(52,211,153,0.12); color:#34d399; box-shadow: 0 0 0 2px rgba(52,211,153,0.35) inset; }
+  .status-err  { background: rgba(248,113,113,0.12); color:#f87171; box-shadow: 0 0 0 2px rgba(248,113,113,0.35) inset; }
+  .status-warn { background: rgba(251,191,36,0.12); color:#fbbf24; box-shadow: 0 0 0 2px rgba(251,191,36,0.35) inset; }
+}
+
+/* Small pulse animation when a status overlay appears */
+.status-mask { animation: statusPulse .28s ease-out; }
+@keyframes statusPulse {
+  0% { transform: scale(0.98); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* === Refresh button busy indicator (no markup change) === */
+#refreshBtn { position: relative; }
+#refreshBtn.btn-busy { pointer-events: none; opacity: 0.85; }
+#refreshBtn.btn-busy::after {
+  content: ""; position: absolute; right: -26px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--brand);
+  border-radius: 50%; animation: spin .8s linear infinite;
+}
+
