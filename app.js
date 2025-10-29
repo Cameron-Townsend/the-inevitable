@@ -61,6 +61,14 @@ async function safeJson(res) {
   }
   return res.json();
 }
+function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''; return p.innerHTML; }
+function normalizeAnswer(s){ return (s||'').trim().toLowerCase(); }
+async function sha256Hex(str){
+  const enc = new TextEncoder().encode(str);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  const b = Array.from(new Uint8Array(buf));
+  return b.map(x => x.toString(16).padStart(2,'0')).join('');
+}
 
 // --- Wire buttons ---
 continueBtn.onclick = handleContinue;
@@ -71,7 +79,7 @@ backToIdBtn2.onclick = showIdStep;
 document.getElementById('logoutBtn').onclick = logout;
 refreshBtn.onclick = () => refreshAfterAuth(true);
 
-// --- Auth state ---
+// --- Auth state & layout ---
 function currentUser(){
   const u = localStorage.getItem('userId');
   const p = localStorage.getItem('pin');
@@ -81,42 +89,71 @@ function setUser(u){
   if (u){ localStorage.setItem('userId',u.userId); localStorage.setItem('pin',u.pin); }
   else { localStorage.removeItem('userId'); localStorage.removeItem('pin'); }
 }
+
 function uiUpdateAuth(){
+  const must = [
+    ['auth', authEl],
+    ['profile', profileEl],
+    ['activitiesCard', activitiesCard],
+    ['activities', activitiesEl],
+  ];
+  must.forEach(([name, el])=>{
+    if (!el) console.warn(`[layout] Missing #${name} element. Check your HTML IDs.`);
+  });
+
   const u = currentUser();
   if (u){
-    authEl.style.display = 'none';
-    profileEl.style.display = 'block';
-    greetingEl.textContent = `Hello, ${u.userId}`;
-    activitiesCard.style.display = '';
+    if (authEl){ authEl.hidden = true; authEl.style.display = 'none'; }
+    if (profileEl){
+      profileEl.hidden = false;
+      profileEl.style.removeProperty('display');
+      if (getComputedStyle(profileEl).display === 'none') profileEl.style.display = 'block';
+    }
+    if (activitiesCard){
+      activitiesCard.hidden = false;
+      activitiesCard.style.removeProperty('display');
+      if (getComputedStyle(activitiesCard).display === 'none') activitiesCard.style.display = 'block';
+    }
+    if (greetingEl) greetingEl.textContent = `Hello, ${u.userId}`;
   } else {
-    authEl.style.display = 'block';
-    profileEl.style.display = 'none';
-    activitiesCard.style.display = 'none';
-    activitiesEl.innerHTML = '';
+    if (authEl){
+      authEl.hidden = false;
+      authEl.style.removeProperty('display');
+      if (getComputedStyle(authEl).display === 'none') authEl.style.display = 'block';
+    }
+    if (profileEl){ profileEl.hidden = true; profileEl.style.display = 'none'; }
+    if (activitiesCard){ activitiesCard.hidden = true; activitiesCard.style.display = 'none'; }
+    if (activitiesEl) activitiesEl.innerHTML = '';
     showIdStep();
   }
 }
 
 // --- Multi-stage auth UI ---
 function showIdStep(){
-  stepUid.style.display = '';
-  stepPin.style.display = 'none';
-  stepReg.style.display = 'none';
+  stepUid.hidden = false;
+  stepUid.style.removeProperty('display');
+  if (getComputedStyle(stepUid).display === 'none') stepUid.style.display = 'block';
+  stepPin.hidden = true; stepPin.style.display = 'none';
+  stepReg.hidden = true; stepReg.style.display = 'none';
   authMsg.textContent = '';
 }
 function showPinStep(name){
-  stepUid.style.display = 'none';
-  stepPin.style.display = '';
-  stepReg.style.display = 'none';
+  stepUid.hidden = true; stepUid.style.display = 'none';
+  stepPin.hidden = false;
+  stepPin.style.removeProperty('display');
+  if (getComputedStyle(stepPin).display === 'none') stepPin.style.display = 'block';
+  stepReg.hidden = true; stepReg.style.display = 'none';
   helloNameEl.textContent = name || '';
   authMsg.textContent = '';
   pinEl.value = '';
   pinEl.focus();
 }
 function showRegisterStep(){
-  stepUid.style.display = 'none';
-  stepPin.style.display = 'none';
-  stepReg.style.display = '';
+  stepUid.hidden = true; stepUid.style.display = 'none';
+  stepPin.hidden = true; stepPin.style.display = 'none';
+  stepReg.hidden = false;
+  stepReg.style.removeProperty('display');
+  if (getComputedStyle(stepReg).display === 'none') stepReg.style.display = 'block';
   authMsg.textContent = '';
   displayNameEl.value = '';
   pinNewEl.value = '';
@@ -153,6 +190,7 @@ async function handleContinue(){
     const data = await safeJson(res);
     if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
 
+    // Ensure activities cached
     const cached = readActivitiesCache();
     if (!cached){
       beginBusy();
@@ -211,15 +249,18 @@ async function loginOrRegister(kind){
     setUser({userId, pin});
     uiUpdateAuth();
 
+    // Render activities from cache immediately
     const cached = readActivitiesCache();
     renderActivities(cached ? cached.activities : [], new Set());
 
+    // If we prefetched submissions for this user, apply instantly
     const pref = sessionStorage.getItem('SUBMIT_CACHE_'+userId);
     if (pref){
       const set = new Set(JSON.parse(pref).map(s=>s.activityId));
       applySubmissionLocks(set);
     }
 
+    // Then do normal parallel refresh
     await refreshAfterAuth(false);
 
     authMsg.innerHTML = (kind==='register')
@@ -261,15 +302,6 @@ async function loadLeaderboard(){
   }catch(e){ logErr('loadLeaderboard', e); }
 }
 
-// --- Helpers, cache, etc. (unchanged below) ---
-function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''; return p.innerHTML; }
-function normalizeAnswer(s){ return (s||'').trim().toLowerCase(); }
-async function sha256Hex(str){
-  const enc = new TextEncoder().encode(str);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  const b = Array.from(new Uint8Array(buf));
-  return b.map(x => x.toString(16).padStart(2,'0')).join('');
-}
 // --- Submissions ---
 async function loadSubmittedSet(userId){
   try{
@@ -281,7 +313,6 @@ async function loadSubmittedSet(userId){
   }catch(e){ logErr('loadSubmittedSet', e); }
   return new Set();
 }
-
 function applySubmissionLocks(submittedSet){
   if (!(submittedSet instanceof Set)) return;
   const tiles = activitiesEl.querySelectorAll('.tile');
@@ -310,12 +341,10 @@ function readActivitiesCache(){
     return o;
   }catch(e){ return null; }
 }
-
 function writeActivitiesCache(activities, signature){
   const o = { ts: Date.now(), signature, activities };
   localStorage.setItem(ACT_CACHE_KEY, JSON.stringify(o));
 }
-
 async function activitiesSignature(activities){
   const key = activities.map(a => [a.activityId, a.title, a.prompt, a.points, a.openIso, a.closeIso]);
   return await sha256Hex(JSON.stringify(key));
@@ -363,11 +392,25 @@ async function refreshAfterAuth(forceSync=false){
 
 // --- Activities render + tile behavior ---
 function renderActivities(acts, submittedSet){
+  if (activitiesCard){
+    activitiesCard.hidden = false;
+    activitiesCard.style.removeProperty('display');
+    if (getComputedStyle(activitiesCard).display === 'none') activitiesCard.style.display = 'block';
+  }
+
+  if (!activitiesEl){
+    console.warn('[renderActivities] #activities not found. Check your HTML layout/IDs.');
+    return;
+  }
+
   activitiesEl.innerHTML = '';
   if (acts && acts.length){
     acts.forEach(a => activitiesEl.appendChild(activityTile(a, submittedSet)));
   } else {
-    activitiesEl.innerHTML = '<p class="muted">No open activities right now.</p>';
+    activitiesEl.innerHTML = `
+      <div class="card muted" role="status" aria-live="polite">
+        No open activities right now. Check back soon!
+      </div>`;
   }
 }
 
@@ -380,11 +423,11 @@ function activityTile(a, submittedSet){
   div.innerHTML = `
     <h3>${escapeHtml(a.title)}</h3>
     <p class="muted">${escapeHtml(a.prompt || '')}</p>
-    <div class="flex"><span class="badge">${a.points||0} 🪙</span></div>
+    <div class="row gap"><span class="badge">${a.points||0} 🪙</span></div>
     <label>Your Answer
       <textarea rows="2" class="answer" ${alreadySubmitted ? 'disabled' : ''}></textarea>
     </label>
-    <button class="submit" ${alreadySubmitted ? 'disabled' : ''}>${alreadySubmitted ? 'Submitted' : 'Submit'}</button>
+    <button class="submit btn primary" ${alreadySubmitted ? 'disabled' : ''}>${alreadySubmitted ? 'Submitted' : 'Submit'}</button>
     <p class="muted result">${alreadySubmitted ? 'You already submitted this activity.' : ''}</p>
   `;
 
@@ -469,6 +512,7 @@ function showStatus(div, kind, text){
   const mask = document.createElement('div');
   mask.className = 'status-mask ' + (kind==='ok' ? 'status-ok' : kind==='err' ? 'status-err' : 'status-warn');
   mask.textContent = text || '';
+  div.style.position = 'relative';
   div.appendChild(mask);
 }
 function clearStatus(div){ div.querySelector('.status-mask')?.remove(); }
