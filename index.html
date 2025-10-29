@@ -17,30 +17,47 @@
   <div class="wrap">
 
     <div class="grid">
-      <!-- Auth / Profile -->
-      <div class="card">
-        <h1>Class Challenges</h1>
-        <p class="muted">Solve activities, earn currency, climb the leaderboard.</p>
+      <!-- AUTH CARD -->
+<div id="auth" class="card">
+  <h2>Welcome</h2>
+  <p class="muted">Enter your User ID to continue.</p>
 
-        <div id="auth">
-          <h2>Sign In</h2>
-          <label>Student ID <input id="userId" autocomplete="off" /></label>
-          <label>PIN <input id="pin" type="password" autocomplete="off" /></label>
-          <div class="flex">
-            <button id="loginBtn">Login</button>
-            <button id="registerBtn" title="First time here?">Register</button>
-          </div>
-          <p id="authMsg" class="muted"></p>
-        </div>
+  <div id="step-uid">
+    <label>User ID
+      <input id="userId" autocomplete="username" />
+    </label>
+    <div class="flex" style="margin-top:10px">
+      <button id="continueBtn">Continue</button>
+    </div>
+    <p id="authMsg" class="muted"></p>
+  </div>
 
-        <div id="profile" style="display:none;">
-          <div class="flex">
-            <strong id="greeting"></strong>
-            <span class="badge">Balance: <span id="balance">0</span> 🪙</span>
-          </div>
-          <button id="logoutBtn" class="btn-gray">Logout</button>
-        </div>
-      </div>
+  <div id="step-pin" style="display:none">
+    <p class="muted">Hello, <span id="helloName"></span>. Enter your PIN.</p>
+    <label>PIN
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" />
+    </label>
+    <div class="flex" style="margin-top:10px">
+      <button id="loginBtn">Login</button>
+      <button id="backToIdBtn" class="btn-gray">Back</button>
+    </div>
+  </div>
+
+  <div id="step-register" style="display:none">
+    <p class="muted">New user. Create your display name & PIN.</p>
+    <label>Display Name
+      <input id="displayName" maxlength="40" />
+    </label>
+    <label>PIN
+      <input id="pinNew" type="password" inputmode="numeric" autocomplete="new-password" />
+    </label>
+    <div class="flex" style="margin-top:10px">
+      <button id="registerBtn">Register</button>
+      <button id="backToIdBtn2" class="btn-gray">Back</button>
+    </div>
+  </div>
+</div>
+
 
       <!-- Leaderboard (always visible) -->
       <div class="card">
