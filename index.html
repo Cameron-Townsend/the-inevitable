@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Multi-Code Secret Reveal (Classroom Demo)</title>
+<style>
+  body{font-family:system-ui,Arial,Segoe UI;display:flex;min-height:100vh;align-items:center;justify-content:center;
+       background:#f4f7fb;margin:0;padding:20px}
+  .card{background:white;padding:20px;border-radius:10px;box-shadow:0 8px 30px rgba(17,24,39,0.08);width:360px;max-width:100%}
+  input{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #dde6f2;box-sizing:border-box}
+  button{margin-top:12px;padding:10px;border-radius:8px;border:none;background:#2563eb;color:white;width:100%;cursor:pointer}
+  #results{margin-top:14px;display:none}
+  .secret{background:#eef6ff;border:1px solid #d3e8ff;padding:10px;border-radius:8px;margin-top:8px}
+  .note{font-size:12px;color:#6b7280;margin-top:8px}
+</style>
+</head>
+<body>
+  <div class="card" role="main" aria-labelledby="title">
+    <h2 id="title">Enter Code to Reveal Secret</h2>
+    <label for="code">Code</label>
+    <input id="code" type="password" placeholder="Enter classroom code (e.g. 1234)" autocomplete="off" />
+    <button id="go">Reveal</button>
+
+    <div id="results" aria-live="polite">
+      <div id="foundList"></div>
+    </div>
+
+    <p class="note">Teacher note: this is a demo meant to deter casual snooping. A determined student who examines JS + runs the decode can still retrieve messages.</p>
+  </div>
+
+<script>
+/*
+  PRECONFIGURED encoded secrets:
+  - Each entry is a Base64-encoded blob which was produced by XORing the plaintext (UTF-8)
+    with SHA-256(password) (repeated).
+  - If decode produces text that begins with "SECRET:", we reveal it.
+  - To add/change secrets: generate new Base64 blobs using the Python snippet in the teacher notes below.
+*/
+
+/* ===== Example entries (already encoded) =====
+   passwords -> secrets
+   "1234" -> "SECRET: Hello World!"
+   "abcd" -> "SECRET: You opened vault 2"
+   "2025" -> "SECRET: Nice work, teacher!"
+*/
+const encodedSecrets = [
+  {id: "vaultA", blob: "UOkkEFOn23w+e43JjXWnCOdaR+k="},
+  {id: "vaultB", blob: "25FlPZGyCa1K1zDcnfky80X4qQ5CzE0Jg9M="},
+  {id: "vaultC", blob: "4feyVpZ4WalNiDLMknoBVd8xrHjhrucwFv2i"}
+];
+
+const btn = document.getElementById('go');
+const input = document.getElementById('code');
+const results = document.getElementById('results');
+const foundList = document.getElementById('foundList');
+
+btn.addEventListener('click', tryReveal);
+input.addEventListener('keydown', (e)=> { if(e.key === 'Enter') tryReveal(); });
+
+async function tryReveal(){
+  const code = (input.value || "").trim();
+  if(!code){ alert("Please enter a code."); return; }
+
+  // compute SHA-256 digest of input code
+  const key = await sha256(code); // Uint8Array(32)
+  let anyFound = false;
+  foundList.innerHTML = '';
+
+  for(const entry of encodedSecrets){
+    try {
+      const encBytes = base64ToUint8Array(entry.blob);
+      const plain = xorWithKey(encBytes, key);
+      const text = new TextDecoder().decode(plain);
+      if(text && text.startsWith("SECRET:")){
+        anyFound = true;
+        const revealed = text.slice(7).trim();
+        const box = document.createElement('div');
+        box.className = 'secret';
+        box.textContent = revealed;
+        foundList.appendChild(box);
+      }
+    } catch(e) {
+      // decode error, skip
+    }
+  }
+
+  if(anyFound){
+    results.style.display = 'block';
+  } else {
+    results.style.display = 'none';
+    alert("No secret for that code. Try again.");
+  }
+}
+
+/* ===== Utility functions ===== */
+async function sha256(message){
+  const enc = new TextEncoder();
+  const data = enc.encode(message);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return new Uint8Array(buf);
+}
+
+function base64ToUint8Array(b64){
+  const binary = atob(b64);
+  const len = binary.length;
+  const arr = new Uint8Array(len);
+  for(let i=0;i<len;i++) arr[i] = binary.charCodeAt(i);
+  return arr;
+}
+
+function xorWithKey(data, key){
+  const out = new Uint8Array(data.length);
+  for(let i=0;i<data.length;i++){
+    out[i] = data[i] ^ key[i % key.length];
+  }
+  return out;
+}
+</script>
+</body>
+</html>
