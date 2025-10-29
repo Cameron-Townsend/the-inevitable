@@ -1,110 +1,49 @@
-/* Let the whole doc advertise light & dark support */
-:root { color-scheme: light dark; }
-
-/* ===== Color tokens ===== */
+/* === Ultraviolet Catastrophe Color System === */
 :root {
   /* LIGHT MODE (default) */
-  --bg:#f7f9fc;
-  --card:#ffffff;
-  --ink:#111827;
-  --muted:#6b7280;
-  --brand:#2563eb;
-  --ok:#10b981;
-  --warn:#ef4444;
-  --border:#d9e1ee;
-  --shadow: 0 8px 24px rgba(0,0,0,.06);
+  --bg: #F6F5FB;
+  --card: #FFFFFF;
+  --ink: #1E1A32;
+  --muted: #7C7A8B;
+  --brand: #7C3AED;
+  --ok: #38BDF8;
+  --warn: #FB7185;
+  --border: #E0E0F2;
+  --shadow: 0 4px 16px rgba(124,58,237,0.12);
 }
 
-/* AUTO dark mode via system preference */
+/* === AUTO Dark Mode (system preference) === */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg:#0b0f1a;
-    --card:#111827;
-    --ink:#e5e7eb;
-    --muted:#9ca3af;
-    --brand:#60a5fa;
-    --ok:#34d399;
-    --warn:#f87171;
-    --border:#273244;
-    --shadow: 0 10px 28px rgba(0,0,0,.45);
+    --bg: #0C0B14;
+    --card: #151427;
+    --ink: #E7E3FF;
+    --muted: #A29BC1;
+    --brand: #A78BFA;
+    --ok: #22D3EE;
+    --warn: #FCA5A5;
+    --border: #2B2A3D;
+    --shadow: 0 4px 16px rgba(167,139,250,0.25);
   }
 }
 
-/* OPTIONAL manual override (if you add a theme toggle later) */
+/* Optional manual overrides for theme toggle */
 :root[data-theme="light"] {
-  --bg:#f7f9fc; --card:#ffffff; --ink:#111827; --muted:#6b7280;
-  --brand:#2563eb; --ok:#10b981; --warn:#ef4444; --border:#d9e1ee; --shadow: 0 8px 24px rgba(0,0,0,.06);
+  --bg: #F6F5FB; --card: #FFFFFF; --ink: #1E1A32; --muted: #7C7A8B;
+  --brand: #7C3AED; --ok: #38BDF8; --warn: #FB7185; --border: #E0E0F2;
+  --shadow: 0 4px 16px rgba(124,58,237,0.12);
 }
 :root[data-theme="dark"] {
-  --bg:#0b0f1a; --card:#111827; --ink:#e5e7eb; --muted:#9ca3af;
-  --brand:#60a5fa; --ok:#34d399; --warn:#f87171; --border:#273244; --shadow: 0 10px 28px rgba(0,0,0,.45);
+  --bg: #0C0B14; --card: #151427; --ink: #E7E3FF; --muted: #A29BC1;
+  --brand: #A78BFA; --ok: #22D3EE; --warn: #FCA5A5; --border: #2B2A3D;
+  --shadow: 0 4px 16px rgba(167,139,250,0.25);
 }
 
-/* ===== Base layout ===== */
-html, body { height:100%; }
-body { margin:0; font-family:system-ui, Arial, sans-serif; background:var(--bg); color:var(--ink); }
-.wrap { max-width:980px; margin:0 auto; padding:24px; }
-
-.grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); }
-.card { background:var(--card); border-radius:12px; box-shadow:var(--shadow); padding:16px; border:1px solid var(--border); }
-
-h1,h2 { margin:0 0 10px; }
-label { display:block; font-size:14px; margin-top:8px; }
-
-input, textarea {
-  width:100%; padding:10px; border:1px solid var(--border);
-  background:transparent; color:var(--ink);
-  border-radius:8px; box-sizing:border-box; font-size:16px;
+/* Optional luminous card glow for dark mode */
+@media (prefers-color-scheme: dark) {
+  .card {
+    backdrop-filter: blur(8px);
+    background: rgba(21, 20, 39, 0.9);
+    box-shadow: var(--shadow), 0 0 12px rgba(167,139,250,0.2);
+  }
 }
-
-button {
-  padding:10px 12px; border:0; border-radius:8px; background:var(--brand); color:#fff; cursor:pointer;
-}
-button[disabled]{ filter: brightness(0.85); cursor:not-allowed; } /* fixed rule */
-
-.btn-gray { margin-top:8px; background:var(--muted); color:#fff; }
-
-.row { display:grid; grid-template-columns: 1fr auto; gap:8px; }
-.muted { color:var(--muted); font-size:12px; }
-
-.badge {
-  display:inline-block; padding:2px 8px; border-radius:999px;
-  background: rgba(96, 165, 250, 0.15); /* soft brand tint */
-  color:var(--ink); font-size:12px; border:1px solid var(--border);
-}
-
-.ok { color:var(--ok); }
-.err { color:var(--warn); }
-
-table { width:100%; border-collapse:collapse; }
-th, td { text-align:left; padding:8px; border-bottom:1px solid var(--border); }
-
-.tile { display:flex; flex-direction:column; gap:8px; }
-.tile h3 { margin:0; }
-.flex { display:flex; gap:8px; align-items:center; }
-.space { height:14px; }
-
-/* ✅ Grayed-out, locked tiles after submission */
-.tile.disabled { opacity: 0.55; filter: grayscale(0.2); }
-
-/* === Login / Auth Section Polishing === */
-#auth label {
-  display: block;
-  margin-bottom: 8px;
-}
-
-#auth input {
-  margin-top: 4px;
-}
-
-#auth .flex {
-  margin-top: 12px;   /* space above buttons */
-  gap: 10px;          /* space between Login/Register buttons */
-  justify-content: flex-start;
-}
-
-#auth button {
-  flex: 1;
-  min-width: 90px;
-}
-
