@@ -1,4 +1,4 @@
-// Fill this with your Apps Script Web App URL ending in /exec
+// Set this to your Apps Script Web App /exec URL
 window.APP_CONFIG = {
-  API: 'https://script.google.com/macros/s/AKfycbxJ4LnLXN2eKrgHYYFjXnraQ0XbvGYC6YgXtHdAMAxt8x0AvTcB82YNd9-0kpk7VHN1nA/exec'
+  API: "https://script.google.com/macros/s/AKfycbyDfsMV41HVd0t6m0oK3DhEDHX6-v5Th272RmVhHNp384PhbCJZgX0y7XsWmN0kTGzBqA/exec"
 };
