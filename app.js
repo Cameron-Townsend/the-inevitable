@@ -4,6 +4,10 @@ const API = (window.APP_CONFIG && window.APP_CONFIG.API) || 'WEB_APP_URL_HERE';
 // --- Global state for client-side pregrading ---
 let GRADING = { salt: null, hashes: {}, points: {} };
 
+// --- Activities cache keys ---
+const ACT_CACHE_KEY = 'ACTIVITIES_CACHE_V1';     // { ts, signature, activities: [...] }
+const ACT_CACHE_TTL_MS = 1000 * 60 * 10;         // 10 minutes
+
 // --- DOM refs ---
 const authEl = document.getElementById('auth');
 const profileEl = document.getElementById('profile');
@@ -17,11 +21,13 @@ const userIdEl = document.getElementById('userId');
 const pinEl = document.getElementById('pin');
 const authMsg = document.getElementById('authMsg');
 
+const refreshBtn = document.getElementById('refreshBtn');
+
 // --- Wire up buttons ---
 document.getElementById('loginBtn').onclick = () => loginOrRegister('login');
 document.getElementById('registerBtn').onclick = () => loginOrRegister('register');
 document.getElementById('logoutBtn').onclick = logout;
-document.getElementById('refreshBtn').onclick = () => refreshAfterAuth();
+refreshBtn.onclick = () => refreshAfterAuth(true); // manual refresh may force sync
 
 // --- Auth state helpers ---
 function currentUser(){
@@ -63,7 +69,7 @@ async function loginOrRegister(kind){
     if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${data.error}</span>`; return; }
     setUser({userId, pin});
     uiUpdateAuth();
-    await refreshAfterAuth();
+    await refreshAfterAuth(true); // force sync on first login
     authMsg.innerHTML = kind==='register' ? '<span class="ok">Registered!</span>' : '<span class="ok">Logged in.</span>';
   }catch(e){
     authMsg.innerHTML = '<span class="err">Network error.</span>';
@@ -110,20 +116,91 @@ async function loadSubmittedSet(userId){
   return new Set();
 }
 
-async function loadActivities(submittedSet = new Set()){
+// === Activities Caching ===
+function readActivitiesCache(){
+  try{
+    const raw = localStorage.getItem(ACT_CACHE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || !o.activities || !o.signature) return null;
+    if ((Date.now() - (o.ts || 0)) > ACT_CACHE_TTL_MS) return null;
+    return o;
+  }catch(e){ return null; }
+}
+function writeActivitiesCache(activities, signature){
+  const o = { ts: Date.now(), signature, activities };
+  localStorage.setItem(ACT_CACHE_KEY, JSON.stringify(o));
+}
+async function activitiesSignature(activities){
+  // Signature over the fields that affect rendering
+  const key = activities.map(a => [a.activityId, a.title, a.prompt, a.points, a.openIso, a.closeIso]);
+  return await sha256Hex(JSON.stringify(key));
+}
+
+async function loadActivities(submittedSet = new Set(), opts = { forceSync:false }){
   const u = currentUser(); if(!u){ activitiesEl.innerHTML=''; return; }
-  activitiesEl.innerHTML = '';
+
+  // 1) Try cache first for instant render
+  const cached = readActivitiesCache();
+  if (cached && cached.activities && !opts.forceSync){
+    renderActivities(cached.activities, submittedSet);
+    // 2) In background, check for updates; if signature changed, re-render
+    syncActivitiesInBackground(submittedSet, cached.signature);
+    return;
+  }
+
+  // 3) If no cache (or forced), show spinner on refresh and fetch fresh
+  setRefreshBusy(true);
   try{
     const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
     const data = await res.json();
-    if (data.ok && data.activities.length){
-      data.activities.forEach(a => activitiesEl.appendChild(activityTile(a, submittedSet)));
+    if (data.ok){
+      renderActivities(data.activities, submittedSet);
+      const sig = await activitiesSignature(data.activities || []);
+      writeActivitiesCache(data.activities || [], sig);
     } else {
-      activitiesEl.innerHTML = '<p class="muted">No open activities right now.</p>';
+      activitiesEl.innerHTML = '<p class="muted">Could not load activities.</p>';
     }
   }catch(e){
     activitiesEl.innerHTML = '<p class="muted">Could not load activities.</p>';
+  } finally {
+    setRefreshBusy(false);
   }
+}
+
+async function syncActivitiesInBackground(submittedSet, prevSig){
+  setRefreshBusy(true);
+  try{
+    const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
+    const data = await res.json();
+    if (!data.ok) return;
+    const sig = await activitiesSignature(data.activities || []);
+    if (sig !== prevSig){
+      writeActivitiesCache(data.activities || [], sig);
+      renderActivities(data.activities || [], submittedSet);
+    } else {
+      // no change; optional tiny visual tick could go here
+    }
+  }catch(e){
+    // silent
+  } finally {
+    setRefreshBusy(false);
+  }
+}
+
+function renderActivities(activities, submittedSet){
+  activitiesEl.innerHTML = '';
+  if (activities && activities.length){
+    activities.forEach(a => activitiesEl.appendChild(activityTile(a, submittedSet)));
+  } else {
+    activitiesEl.innerHTML = '<p class="muted">No open activities right now.</p>';
+  }
+}
+
+function setRefreshBusy(isBusy){
+  if (!refreshBtn) return;
+  if (isBusy) refreshBtn.classList.add('btn-busy');
+  else refreshBtn.classList.remove('btn-busy');
 }
 
 // --- Preload grading map (salt + hashed answers) ---
@@ -146,14 +223,14 @@ async function loadGradingMap(){
 }
 
 // --- Coordinated refresh after login ---
-async function refreshAfterAuth(){
+async function refreshAfterAuth(forceSync=false){
   const u = currentUser(); if(!u) return;
   await Promise.all([ loadProfile(), loadLeaderboard(), loadGradingMap() ]);
   const submittedSet = await loadSubmittedSet(u.userId);
-  await loadActivities(submittedSet);
+  await loadActivities(submittedSet, { forceSync });
 }
 
-// --- Tile rendering with optimistic submit + busy overlay ---
+// --- Tile rendering with optimistic submit + busy + status overlays ---
 function activityTile(a, submittedSet){
   const alreadySubmitted = submittedSet.has(a.activityId);
   const div = document.createElement('div');
@@ -184,6 +261,7 @@ function activityTile(a, submittedSet){
 
       // --- Local grading (instant yes/no if we have a hash) ---
       let localCorrect = null;
+      let displayedNeutral = false;
       const h = GRADING.hashes[a.activityId];
 
       if (GRADING.salt && h){
@@ -192,12 +270,16 @@ function activityTile(a, submittedSet){
         if (localCorrect === true) {
           const awardGuess = (a.points || GRADING.points[a.activityId] || 0);
           res.innerHTML = `<span class="ok">Correct! +${awardGuess} 🪙</span>`;
+          showStatus(div, 'ok', 'Correct!');
         } else {
-          // Instant negative feedback
           res.innerHTML = `<span class="err">Not quite. Checking…</span>`;
+          showStatus(div, 'err', 'Not quite');
         }
       } else {
+        // No correct/incorrect key => neutral
+        displayedNeutral = true;
         res.innerHTML = `<span class="muted">Submitting…</span>`;
+        showStatus(div, 'warn', 'Submitted');
       }
 
       // --- Enter busy state (blocks input on this tile) ---
@@ -220,10 +302,13 @@ function activityTile(a, submittedSet){
           const award = Number(d.pointsAwarded||0);
           if (d.correct === true){
             res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`;
+            showStatus(div, 'ok', `+${award} 🪙`);
           } else if (d.correct === false){
             res.innerHTML = `<span class="err">Not quite. Keep trying!</span>`;
+            showStatus(div, 'err', 'Not quite');
           } else {
             res.innerHTML = `<span class="muted">Submitted for review.</span>`;
+            if (!displayedNeutral) showStatus(div, 'warn', 'Submitted');
           }
 
           // Update balance instantly (if provided)
@@ -249,14 +334,16 @@ function activityTile(a, submittedSet){
             ans.disabled = true;
             btn.textContent = 'Submitted';
             div.classList.add('disabled');
+            showStatus(div, 'warn', 'Already submitted');
           } else {
-            // Server rejected for another reason — allow retry
+            // Server rejected — allow retry
             res.innerHTML = `<span class="err">Error: ${d.error}</span>`;
             btn.disabled = false;
             ans.disabled = false;
             btn.textContent = 'Submit';
             setTileBusy(div, false);
-            return; // exit early to avoid clearing twice
+            clearStatus(div);
+            return;
           }
         }
       }catch(e){
@@ -265,6 +352,7 @@ function activityTile(a, submittedSet){
         ans.disabled = false;
         btn.textContent = 'Submit';
         setTileBusy(div, false);
+        clearStatus(div);
         return;
       }
 
@@ -274,6 +362,23 @@ function activityTile(a, submittedSet){
   }
 
   return div;
+}
+
+// --- Status overlay helpers ---
+function showStatus(div, kind, text){
+  clearStatus(div);
+  const mask = document.createElement('div');
+  mask.className = 'status-mask ' + (
+    kind === 'ok' ? 'status-ok' :
+    kind === 'err' ? 'status-err' :
+    'status-warn'
+  );
+  mask.textContent = text || '';
+  div.appendChild(mask);
+}
+function clearStatus(div){
+  const m = div.querySelector('.status-mask');
+  if (m) m.remove();
 }
 
 // --- Utilities ---
@@ -286,21 +391,13 @@ async function sha256Hex(str){
   return b.map(x => x.toString(16).padStart(2,'0')).join('');
 }
 
-// Per-tile busy overlay helper (requires tiny CSS snippet for .busy-mask/.busy-spinner)
+// Per-tile busy overlay helper
 function setTileBusy(div, isBusy){
   if (isBusy) {
     if (!div.querySelector('.busy-mask')) {
       const mask = document.createElement('div');
       mask.className = 'busy-mask';
       mask.innerHTML = '<div class="busy-spinner" aria-label="Working…"></div>';
-      // Ensure positioning works even if CSS isn't loaded yet
-      mask.style.position = 'absolute';
-      mask.style.inset = '0';
-      mask.style.display = 'flex';
-      mask.style.alignItems = 'center';
-      mask.style.justifyContent = 'center';
-      mask.style.borderRadius = '12px';
-      mask.style.pointerEvents = 'all';
       div.style.position = 'relative';
       div.appendChild(mask);
     }
