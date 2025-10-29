@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Class Activity</title>
 <style>
-  body { font-family: system-ui, Arial; background:#f7f9fc; margin: 0; padding: 24px; }
+  body { font-family: system-ui, Arial; background:#f7f9fc; margin:0; padding:24px; }
   .wrap { max-width: 720px; margin: 0 auto; }
   .card { background:#fff; padding:20px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.06); }
   h1 { margin:0 0 12px; }
@@ -27,7 +27,7 @@
   <div class="card">
     <h1>Enter Code</h1>
     <div class="row">
-      <input id="code" type="password" placeholder="Enter your activity code">
+      <input id="code" type="password" placeholder="Enter your activity code" autocomplete="off" />
       <button id="unlockBtn">Unlock</button>
     </div>
     <div id="secretBox" class="msg" aria-live="polite"></div>
@@ -35,9 +35,9 @@
     <div id="scoreSection" class="section" style="display:none;">
       <h2>Submit Score</h2>
       <label for="name">Name (nickname is fine)</label>
-      <input id="name" maxlength="40" placeholder="e.g., StarCoder27">
+      <input id="name" maxlength="40" placeholder="e.g., StarCoder27" />
       <label for="score">Score</label>
-      <input id="score" type="number" min="0" value="0">
+      <input id="score" type="number" min="0" value="0" />
       <button id="submitScoreBtn">Submit</button>
       <p class="hint">We store only nickname + score + code used.</p>
     </div>
@@ -53,16 +53,16 @@
 </div>
 
 <script>
-const API = 'https://script.google.com/macros/s/AKfycbwntXCzUtCwwnVm2Bzz4y3kuBtScZNde4Dan_HCTEIrrjhhe-fB8QJJDNU5rU4IHQnrLg/exec'; // ← paste your Apps Script Web App URL
+const API = 'https://script.google.com/macros/s/AKfycbzxaAo_ixMxwjQbHSKASggQAOmqSZm_oeleZqV8bzXhpmHrtxExoMShWZIA6N-RRaaYtg/exec'; // ← paste your Apps Script Web App URL (…/exec)
 
-const codeInput = document.getElementById('code');
-const unlockBtn = document.getElementById('unlockBtn');
-const secretBox = document.getElementById('secretBox');
-const scoreSection = document.getElementById('scoreSection');
-const nameInput = document.getElementById('name');
-const scoreInput = document.getElementById('score');
-const submitScoreBtn = document.getElementById('submitScoreBtn');
-const boardBody = document.getElementById('boardBody');
+const codeInput       = document.getElementById('code');
+const unlockBtn       = document.getElementById('unlockBtn');
+const secretBox       = document.getElementById('secretBox');
+const scoreSection    = document.getElementById('scoreSection');
+const nameInput       = document.getElementById('name');
+const scoreInput      = document.getElementById('score');
+const submitScoreBtn  = document.getElementById('submitScoreBtn');
+const boardBody       = document.getElementById('boardBody');
 
 let lastUnlockedCode = '';
 
@@ -70,6 +70,7 @@ unlockBtn.addEventListener('click', unlock);
 codeInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') unlock(); });
 submitScoreBtn.addEventListener('click', submitScore);
 
+// --- Patched: use form-encoded body (no JSON header) to avoid CORS preflight
 async function unlock() {
   const code = codeInput.value.trim();
   if (!code) { alert('Enter a code'); return; }
@@ -77,8 +78,7 @@ async function unlock() {
   try {
     const res = await fetch(API, {
       method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ action:'unlock', code })
+      body: new URLSearchParams({ action: 'unlock', code })
     });
     const data = await res.json();
     if (data.ok) {
@@ -92,14 +92,14 @@ async function unlock() {
       alert('No message for that code. Try again.');
     }
   } catch (e) {
-    alert('Network error. Try again.');
+    alert('Network error. Check your Web App URL and permissions.');
   } finally {
     setBusy(unlockBtn, false);
   }
 }
 
 async function submitScore() {
-  const name = nameInput.value.trim();
+  const name  = nameInput.value.trim();
   const score = Number(scoreInput.value || 0);
   if (!name) { alert('Please enter a name or nickname.'); return; }
   if (!lastUnlockedCode) { alert('Unlock a code first.'); return; }
@@ -107,14 +107,18 @@ async function submitScore() {
   try {
     await fetch(API, {
       method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ action:'submitScore', name, score, code: lastUnlockedCode })
+      body: new URLSearchParams({
+        action: 'submitScore',
+        name,
+        score: String(score),
+        code: lastUnlockedCode
+      })
     });
     scoreInput.value = '0';
     await loadLeaderboard();
     alert('Score submitted!');
   } catch (e) {
-    alert('Network error. Try again.');
+    alert('Network error. Check your Web App URL and permissions.');
   } finally {
     setBusy(submitScoreBtn, false);
   }
@@ -133,7 +137,7 @@ async function loadLeaderboard() {
       });
     }
   } catch (e) {
-    // ignore load error for now
+    // If leaderboard fails to load, keep page usable without crashing
   }
 }
 
@@ -144,10 +148,11 @@ function escapeHtml(s){
 }
 function setBusy(btn, busy){
   btn.disabled = !!busy;
-  btn.textContent = busy ? 'Please wait…' : btn === unlockBtn ? 'Unlock' : 'Submit';
+  btn.textContent = busy ? 'Please wait…' : (btn === unlockBtn ? 'Unlock' : 'Submit');
 }
 
-loadLeaderboard(); // show leaderboard to every visitor on page load
+// Load leaderboard for every visitor on page load
+loadLeaderboard();
 </script>
 </body>
 </html>
