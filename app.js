@@ -153,7 +153,7 @@ async function refreshAfterAuth(){
   await loadActivities(submittedSet);
 }
 
-// --- Tile rendering with optimistic submit ---
+// --- Tile rendering with optimistic submit + busy overlay ---
 function activityTile(a, submittedSet){
   const alreadySubmitted = submittedSet.has(a.activityId);
   const div = document.createElement('div');
@@ -178,12 +178,14 @@ function activityTile(a, submittedSet){
     btn.onclick = async () => {
       const u = currentUser();
       if (!u){ alert('Please login first.'); return; }
+
       const answer = ans.value.trim();
       if (!answer){ alert('Enter an answer.'); return; }
 
-      // 1) Local instant check (if we have a hash)
+      // --- Local grading (instant yes/no if we have a hash) ---
       let localCorrect = null;
       const h = GRADING.hashes[a.activityId];
+
       if (GRADING.salt && h){
         const userHash = await sha256Hex(GRADING.salt + normalizeAnswer(answer));
         localCorrect = (userHash === h);
@@ -191,16 +193,19 @@ function activityTile(a, submittedSet){
           const awardGuess = (a.points || GRADING.points[a.activityId] || 0);
           res.innerHTML = `<span class="ok">Correct! +${awardGuess} 🪙</span>`;
         } else {
-          res.innerHTML = `<span class="muted">Submitting for grading…</span>`;
+          // Instant negative feedback
+          res.innerHTML = `<span class="err">Not quite. Checking…</span>`;
         }
       } else {
         res.innerHTML = `<span class="muted">Submitting…</span>`;
       }
 
-      // 2) Lock UI during submit
-      btn.disabled = true; btn.textContent = 'Submitting…';
+      // --- Enter busy state (blocks input on this tile) ---
+      btn.disabled = true;
+      ans.disabled = true;
+      setTileBusy(div, true);
 
-      // 3) Send to server (source of truth)
+      // --- Send to server (source of truth) ---
       try{
         const r = await fetch(API, {
           method:'POST',
@@ -221,17 +226,17 @@ function activityTile(a, submittedSet){
             res.innerHTML = `<span class="muted">Submitted for review.</span>`;
           }
 
-          // Update balance instantly from server
+          // Update balance instantly (if provided)
           if (typeof d.newBalance === 'number'){
             balanceEl.textContent = d.newBalance;
           } else {
             loadProfile(); // fallback
           }
 
-          // Lock tile permanently
+          // Lock tile permanently after a recorded attempt
           btn.disabled = true;
-          btn.textContent = 'Submitted';
           ans.disabled = true;
+          btn.textContent = 'Submitted';
           div.classList.add('disabled');
 
           // Background leaderboard refresh
@@ -239,20 +244,32 @@ function activityTile(a, submittedSet){
 
         } else {
           if (d.error === 'already_submitted') {
-            btn.disabled = true;
-            btn.textContent = 'Submitted';
-            ans.disabled = true;
-            div.classList.add('disabled');
             res.innerHTML = '<span class="muted">Already submitted previously.</span>';
+            btn.disabled = true;
+            ans.disabled = true;
+            btn.textContent = 'Submitted';
+            div.classList.add('disabled');
           } else {
+            // Server rejected for another reason — allow retry
             res.innerHTML = `<span class="err">Error: ${d.error}</span>`;
-            btn.disabled = false; btn.textContent = 'Submit';
+            btn.disabled = false;
+            ans.disabled = false;
+            btn.textContent = 'Submit';
+            setTileBusy(div, false);
+            return; // exit early to avoid clearing twice
           }
         }
       }catch(e){
         res.innerHTML = `<span class="err">Network error.</span>`;
-        btn.disabled = false; btn.textContent = 'Submit';
+        btn.disabled = false;
+        ans.disabled = false;
+        btn.textContent = 'Submit';
+        setTileBusy(div, false);
+        return;
       }
+
+      // Finalize busy state (tile is now submitted/locked)
+      setTileBusy(div, false);
     };
   }
 
@@ -267,6 +284,34 @@ async function sha256Hex(str){
   const buf = await crypto.subtle.digest('SHA-256', enc);
   const b = Array.from(new Uint8Array(buf));
   return b.map(x => x.toString(16).padStart(2,'0')).join('');
+}
+
+// Per-tile busy overlay helper (requires tiny CSS snippet for .busy-mask/.busy-spinner)
+function setTileBusy(div, isBusy){
+  if (isBusy) {
+    if (!div.querySelector('.busy-mask')) {
+      const mask = document.createElement('div');
+      mask.className = 'busy-mask';
+      mask.innerHTML = '<div class="busy-spinner" aria-label="Working…"></div>';
+      // Ensure positioning works even if CSS isn't loaded yet
+      mask.style.position = 'absolute';
+      mask.style.inset = '0';
+      mask.style.display = 'flex';
+      mask.style.alignItems = 'center';
+      mask.style.justifyContent = 'center';
+      mask.style.borderRadius = '12px';
+      mask.style.pointerEvents = 'all';
+      div.style.position = 'relative';
+      div.appendChild(mask);
+    }
+    div.classList.add('busy');
+    div.setAttribute('aria-busy', 'true');
+  } else {
+    const mask = div.querySelector('.busy-mask');
+    if (mask) mask.remove();
+    div.classList.remove('busy');
+    div.removeAttribute('aria-busy');
+  }
 }
 
 // --- Initial landing: Auth + Leaderboard only ---
