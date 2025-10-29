@@ -26,12 +26,16 @@
   .tile h3 { margin:0; }
   .flex { display:flex; gap:8px; align-items:center; }
   .space { height:14px; }
+
+  /* ✅ Grayed-out, locked tiles after submission */
+  .tile.disabled { opacity: 0.55; filter: grayscale(0.2); }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <div class="grid">
+    <!-- Auth / Profile -->
     <div class="card">
       <h1>Class Challenges</h1>
       <p class="muted">Solve activities, earn currency, climb the leaderboard.</p>
@@ -56,6 +60,7 @@
       </div>
     </div>
 
+    <!-- Leaderboard (always visible) -->
     <div class="card">
       <h2>Leaderboard (Top 20)</h2>
       <table>
@@ -68,7 +73,8 @@
 
   <div class="space"></div>
 
-  <div class="card">
+  <!-- Activities (hidden until login) -->
+  <div class="card" id="activitiesCard" style="display:none;">
     <div class="row">
       <h2>Today’s Activities</h2>
       <button id="refreshBtn" title="Reload activities">Refresh</button>
@@ -87,6 +93,7 @@ const greetingEl = document.getElementById('greeting');
 const balanceEl = document.getElementById('balance');
 const boardBody = document.getElementById('boardBody');
 const activitiesEl = document.getElementById('activities');
+const activitiesCard = document.getElementById('activitiesCard');
 
 const userIdEl = document.getElementById('userId');
 const pinEl = document.getElementById('pin');
@@ -95,52 +102,74 @@ const authMsg = document.getElementById('authMsg');
 document.getElementById('loginBtn').onclick = () => loginOrRegister('login');
 document.getElementById('registerBtn').onclick = () => loginOrRegister('register');
 document.getElementById('logoutBtn').onclick = logout;
-document.getElementById('refreshBtn').onclick = () => { loadActivities(); loadLeaderboard(); if (currentUser()) loadProfile(); };
+document.getElementById('refreshBtn').onclick = () => refreshAfterAuth();
 
+/* ---------- Auth state helpers ---------- */
 function currentUser(){
   const u = localStorage.getItem('userId');
   const p = localStorage.getItem('pin');
   return (u && p) ? {userId:u, pin:p} : null;
 }
-function setUser(u){ if(u){ localStorage.setItem('userId',u.userId); localStorage.setItem('pin',u.pin); } else { localStorage.removeItem('userId'); localStorage.removeItem('pin'); } }
+function setUser(u){
+  if(u){ localStorage.setItem('userId',u.userId); localStorage.setItem('pin',u.pin); }
+  else { localStorage.removeItem('userId'); localStorage.removeItem('pin'); }
+}
 function uiUpdateAuth(){
   const u = currentUser();
   if(u){
     authEl.style.display = 'none';
     profileEl.style.display = 'block';
     greetingEl.textContent = `Hello, ${u.userId}`;
+    activitiesCard.style.display = '';  // show activities only when logged in
   }else{
     authEl.style.display = 'block';
     profileEl.style.display = 'none';
+    activitiesCard.style.display = 'none'; // landing = Auth + Leaderboard only
+    activitiesEl.innerHTML = '';
   }
 }
 
+/* ---------- Auth endpoints ---------- */
 async function loginOrRegister(kind){
   const userId = userIdEl.value.trim();
   const pin = pinEl.value;
   if (!userId || !pin){ authMsg.textContent='Enter ID and PIN.'; return; }
   authMsg.textContent='…';
   try{
-    const res = await fetch(API, { method:'POST', body: new URLSearchParams({ action: kind, userId, pin, displayName:userId }) });
+    const res = await fetch(API, {
+      method:'POST',
+      body: new URLSearchParams({ action: kind, userId, pin, displayName:userId })
+    });
     const data = await res.json();
     if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${data.error}</span>`; return; }
     setUser({userId, pin});
     uiUpdateAuth();
-    await loadProfile();
+    await refreshAfterAuth();
     authMsg.innerHTML = kind==='register' ? '<span class="ok">Registered!</span>' : '<span class="ok">Logged in.</span>';
   }catch(e){
     authMsg.innerHTML = '<span class="err">Network error.</span>';
   }
 }
-
 function logout(){ setUser(null); uiUpdateAuth(); }
 
+/* ---------- Coordinated refresh after login ---------- */
+async function refreshAfterAuth(){
+  const u = currentUser(); if(!u) return;
+  await Promise.all([ loadProfile(), loadLeaderboard() ]);
+  const submittedSet = await loadSubmittedSet(u.userId);
+  await loadActivities(submittedSet);
+}
+
+/* ---------- Profile, Leaderboard, Activities ---------- */
 async function loadProfile(){
   const u = currentUser(); if(!u) return;
   try{
     const res = await fetch(API + '?action=getprofile&userId=' + encodeURIComponent(u.userId) + '&ts=' + Date.now());
     const data = await res.json();
-    if (data.ok){ balanceEl.textContent = data.balance; greetingEl.textContent = `Hello, ${u.userId}`; }
+    if (data.ok){
+      balanceEl.textContent = data.balance;
+      greetingEl.textContent = `Hello, ${u.userId}`;
+    }
   }catch(e){}
 }
 
@@ -159,13 +188,26 @@ async function loadLeaderboard(){
   }catch(e){}
 }
 
-async function loadActivities(){
+// get submissions for this user, to gray-out tiles
+async function loadSubmittedSet(userId){
+  try{
+    const res = await fetch(API + '?action=getsubmissions&userId=' + encodeURIComponent(userId) + '&ts=' + Date.now());
+    const data = await res.json();
+    if (data.ok){
+      return new Set(data.submissions.map(s => s.activityId));
+    }
+  }catch(e){}
+  return new Set();
+}
+
+async function loadActivities(submittedSet = new Set()){
+  const u = currentUser(); if(!u){ activitiesEl.innerHTML=''; return; }
   activitiesEl.innerHTML = '';
   try{
     const res = await fetch(API + '?action=getactivities&ts=' + Date.now());
     const data = await res.json();
     if (data.ok && data.activities.length){
-      data.activities.forEach(a => activitiesEl.appendChild(activityTile(a)));
+      data.activities.forEach(a => activitiesEl.appendChild(activityTile(a, submittedSet)));
     } else {
       activitiesEl.innerHTML = '<p class="muted">No open activities right now.</p>';
     }
@@ -174,60 +216,81 @@ async function loadActivities(){
   }
 }
 
-function activityTile(a){
-  const div = document.createElement('div'); div.className = 'card tile';
+function activityTile(a, submittedSet){
+  const alreadySubmitted = submittedSet.has(a.activityId);
+  const div = document.createElement('div');
+  div.className = 'card tile' + (alreadySubmitted ? ' disabled' : '');
+
   div.innerHTML = `
     <h3>${escapeHtml(a.title)}</h3>
     <p class="muted">${escapeHtml(a.prompt || '')}</p>
     <div class="flex"><span class="badge">${a.points||0} 🪙</span></div>
     <label>Your Answer
-      <textarea rows="2" class="answer"></textarea>
+      <textarea rows="2" class="answer" ${alreadySubmitted ? 'disabled' : ''}></textarea>
     </label>
-    <button class="submit">Submit</button>
-    <p class="muted result"></p>
+    <button class="submit" ${alreadySubmitted ? 'disabled' : ''}>${alreadySubmitted ? 'Submitted' : 'Submit'}</button>
+    <p class="muted result">${alreadySubmitted ? 'You already submitted this activity.' : ''}</p>
   `;
-  const ans = div.querySelector('.answer');
-  const btn = div.querySelector('.submit');
-  const res = div.querySelector('.result');
-  btn.onclick = async () => {
-    const u = currentUser();
-    if (!u){ alert('Please login first.'); return; }
-    const answer = ans.value.trim();
-    if (!answer){ alert('Enter an answer.'); return; }
-    btn.disabled = true; btn.textContent = 'Submitting…';
-    try{
-      const r = await fetch(API, { method:'POST', body: new URLSearchParams({
-        action:'submitAnswer', userId:u.userId, pin:u.pin, activityId:a.activityId, answer
-      })});
-      const d = await r.json();
-      if (d.ok){
-        const award = Number(d.pointsAwarded||0);
-        if (d.correct === true){
-          res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`;
-        } else if (d.correct === false){
-          res.innerHTML = `<span class="err">Not quite. Keep trying!</span>`;
+
+  if (!alreadySubmitted){
+    const ans = div.querySelector('.answer');
+    const btn = div.querySelector('.submit');
+    const res = div.querySelector('.result');
+
+    btn.onclick = async () => {
+      const u = currentUser();
+      if (!u){ alert('Please login first.'); return; }
+      const answer = ans.value.trim();
+      if (!answer){ alert('Enter an answer.'); return; }
+
+      btn.disabled = true; btn.textContent = 'Submitting…';
+      try{
+        const r = await fetch(API, {
+          method:'POST',
+          body: new URLSearchParams({
+            action:'submitAnswer', userId:u.userId, pin:u.pin, activityId:a.activityId, answer
+          })
+        });
+        const d = await r.json();
+
+        if (d.ok){
+          const award = Number(d.pointsAwarded||0);
+          if (d.correct === true){
+            res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`;
+          } else if (d.correct === false){
+            res.innerHTML = `<span class="err">Not quite. Keep trying!</span>`;
+          } else {
+            res.innerHTML = `<span class="muted">Submitted for review.</span>`;
+          }
+          if (award>0){ await loadProfile(); await loadLeaderboard(); }
+          // Lock tile immediately
+          btn.disabled = true;
+          btn.textContent = 'Submitted';
+          ans.disabled = true;
+          div.classList.add('disabled');
+          res.insertAdjacentText('beforeend', ' (This activity is now locked for you.)');
         } else {
-          res.innerHTML = `<span class="muted">Submitted for review.</span>`;
+          // Server may enforce lock (already_submitted)
+          res.innerHTML = `<span class="err">Error: ${d.error}</span>`;
+          btn.disabled = false; btn.textContent = 'Submit';
         }
-        if (award>0){ await loadProfile(); await loadLeaderboard(); }
-      } else {
-        res.innerHTML = `<span class="err">Error: ${d.error}</span>`;
+      }catch(e){
+        res.innerHTML = `<span class="err">Network error.</span>`;
+        btn.disabled = false; btn.textContent = 'Submit';
       }
-    }catch(e){
-      res.innerHTML = `<span class="err">Network error.</span>`;
-    }finally{
-      btn.disabled = false; btn.textContent = 'Submit';
-    }
-  };
+    };
+  }
+
   return div;
 }
 
+/* ---------- Utilities ---------- */
 function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''; return p.innerHTML; }
 
+/* ---------- Initial landing: Auth + Leaderboard only ---------- */
 uiUpdateAuth();
-loadActivities();
 loadLeaderboard();
-// Optional: auto-refresh leaderboard for a projector view
+// Optional projector auto-refresh
 setInterval(loadLeaderboard, 30000);
 </script>
 </body>
