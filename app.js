@@ -158,7 +158,7 @@ function activityTile(a, submittedSet){
       const answer = ans.value.trim();
       if (!answer){ alert('Enter an answer.'); return; }
 
-      btn.disabled = true; btn.textContent = 'Submitting…';
+      btn.disabled = true; btn.textContent = 'Submitting…'; // ✅ fixed 'true'
       try{
         const r = await fetch(API, {
           method:'POST',
@@ -185,8 +185,17 @@ function activityTile(a, submittedSet){
           div.classList.add('disabled');
           res.insertAdjacentText('beforeend', ' (This activity is now locked for you.)');
         } else {
-          res.innerHTML = `<span class="err">Error: ${d.error}</span>`;
-          btn.disabled = false; btn.textContent = 'Submit';
+          // ✅ If server enforces no-resubmit, lock tile here too
+          if (d.error === 'already_submitted') {
+            btn.disabled = true;
+            btn.textContent = 'Submitted';
+            ans.disabled = true;
+            div.classList.add('disabled');
+            res.innerHTML = '<span class="muted">Already submitted previously.</span>';
+          } else {
+            res.innerHTML = `<span class="err">Error: ${d.error}</span>`;
+            btn.disabled = false; btn.textContent = 'Submit';
+          }
         }
       }catch(e){
         res.innerHTML = `<span class="err">Network error.</span>`;
@@ -205,3 +214,8 @@ function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''
 uiUpdateAuth();
 loadLeaderboard();
 setInterval(loadLeaderboard, 30000); // optional projector refresh
+
+// ✅ If a user is already logged in (localStorage), load submissions & activities now
+if (currentUser()) {
+  refreshAfterAuth();
+}
