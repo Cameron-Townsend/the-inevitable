@@ -158,7 +158,7 @@ function activityTile(a, submittedSet){
       const answer = ans.value.trim();
       if (!answer){ alert('Enter an answer.'); return; }
 
-      btn.disabled = true; btn.textContent = 'Submitting…'; // ✅ fixed 'true'
+      btn.disabled = true; btn.textContent = 'Submitting…'; // fixed boolean
       try{
         const r = await fetch(API, {
           method:'POST',
@@ -185,7 +185,7 @@ function activityTile(a, submittedSet){
           div.classList.add('disabled');
           res.insertAdjacentText('beforeend', ' (This activity is now locked for you.)');
         } else {
-          // ✅ If server enforces no-resubmit, lock tile here too
+          // If server enforces no-resubmit, lock the tile here too
           if (d.error === 'already_submitted') {
             btn.disabled = true;
             btn.textContent = 'Submitted';
@@ -215,7 +215,7 @@ uiUpdateAuth();
 loadLeaderboard();
 setInterval(loadLeaderboard, 30000); // optional projector refresh
 
-// ✅ If a user is already logged in (localStorage), load submissions & activities now
+// If a user is already logged in, immediately load their submissions + activities
 if (currentUser()) {
   refreshAfterAuth();
 }
