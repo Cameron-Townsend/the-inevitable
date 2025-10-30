@@ -1,8 +1,28 @@
 
-// Render dashboard pieces from cache safely
+// ---- Safe Dashboard Hydration (guarded) ----
 function hydrateDashFromCache(){
   try {
-    if (cache && cache.profile) { renderProfile(cache.profile); try{ bindProfileAvatarFromPayload && bindProfileAvatarFromPayload(cache.profile); }catch(e){} }
+    if (cache && cache.profile) {
+      try { if (typeof renderProfile === 'function') renderProfile(cache.profile); } catch(e){}
+      try { if (typeof bindProfileAvatarFromPayload === 'function') bindProfileAvatarFromPayload(cache.profile); } catch(e){}
+    }
+    if (cache && cache.lb) {
+      try { if (typeof renderLeaderboard === 'function') renderLeaderboard(cache.lb); } catch(e){}
+    }
+    if (cache && cache.acts) {
+      try {
+        var done = (cache.done instanceof Set) ? cache.done :
+                   new Set(Array.isArray(cache.done) ? cache.done : []);
+        if (typeof renderActivities === 'function') renderActivities(cache.acts, done);
+      } catch(e){}
+    }
+  } catch(e){ console.warn('[hydrateDashFromCache] warning:', e); }
+}
+// ---- End Safe Dashboard Hydration ----
+
+
+// Render dashboard pieces from cache safely
+catch(e){} }
     if (cache && cache.lb)      { renderLeaderboard(cache.lb); }
     if (cache && cache.acts)    { 
       try {
@@ -155,222 +175,7 @@ function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textCont
 
 // Data fetching
 async function precacheFor(uid){
-  const avatarsP = jget({ action: 'getavatars' }).catch(function(){ return { ok:false }; });
-
-  return Promise.all([
-    jget({ action: 'getactivities' }),
-    jget({ action: 'leaderboard' }),
-    jget({ action: 'getgradingmap' }),
-    uid ? jget({ action: 'getsubmissions', userId: uid }) : Promise.resolve({ ok:true, submissions: [] }),
-    uid ? jget({ action: 'getprofile',    userId: uid }) : Promise.resolve({ ok:true, userId: uid, balance: 0 })
-  ]).then(function(results){
-    var acts = results[0], lb = results[1], gm = results[2], subs = results[3], prof = results[4];
-    if (acts && acts.ok) { cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch(e){} }
-    if (lb && lb.ok)     { cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb));   }catch(e){} }
-    if (gm && gm.ok)     { cache.gm   = { salt: gm.salt, map: gm.map }; try{ localStorage.setItem(K.gm, JSON.stringify(cache.gm)); }catch(e){} }
-    if (subs && subs.ok) { cache.done = new Set(subs.submissions.map(function(s){ return s.activityId; })); try{ localStorage.setItem(K.subs, JSON.stringify(Array.from(cache.done))); }catch(e){} }
-    if (prof && prof.ok) { cache.profile = prof; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch(e){} }
-    return avatarsP;
-  }).then(function(av){
-    if (av && av.ok) { cache.avatars = av.avatars; try{ localStorage.setItem('cc.avatars', JSON.stringify(cache.avatars)); }catch(e){} }
-    return true;
-  }).catch(function(){ return true; });
-}
-
-function renderDash(){
-  showApp();
-  // Ensure done set is loaded even if offline
-  if (!cache.done || cache.done.size===0) loadDoneFromStorage();
-  renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
-  try{ if(cache.profile) bindProfileAvatarFromPayload(cache.profile); }catch{}
-  renderLeaderboard(cache.lb||[]);
-  renderActivities(cache.acts||[], cache.done||new Set());
-  renderArchive();
-  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
-}
-
-// Auth flow
-async function goToPin(mode){
-  cache.authMode = mode;
-  const uid = $('#idOnly')?.value.trim();
-  if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
-  setMsg('#idMsg',''); localStorage.setItem(K.uid, uid);
-  showAuthPin();
-  const primaryBtn = $('#primaryAuthBtn'); if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
-  try{
-    Busy.show('Checking ID…');
-    if(!cache.lb){ const lb = await jget({action:'leaderboard'}); if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); } }
-    const check = await jget({action:'checkuser', userId:uid});
-    const exists = check.ok && check.exists;
-    const name = exists ? (check.displayName||uid) : uid;
-    const hello = $('#helloName');
-    if(hello){
-      hello.textContent = (mode==='login')
-        ? (exists ? `Welcome back, ${name}!` : `Not registered yet — let's create your account, ${name}.`)
-        : `Create your account, ${name}`;
-    }
-    if(mode==='login' && !exists){ cache.authMode='register'; if(primaryBtn) primaryBtn.textContent='Register'; }
-    precacheFor(uid).then(function(){ hydrateDashFromCache(); }).catch(function(){ hydrateDashFromCache(); }).catch(()=>{});
-  } catch(e){
-    setMsg('#idMsg', e.message||'Network error'); showAuthId();
-  } finally { Busy.hide(); }
-}
-
-async function onPrimaryAuth(){
-  const uid = store.uid() || $('#idOnly')?.value.trim();
-  const pin = $('#pin')?.value.trim();
-  const remember = $('#rememberPin')?.checked && !USE_SESSION_ONLY;
-  if(!uid || !pin){ setMsg('#loginMsg','Enter PIN'); return; }
-  const button=$('#primaryAuthBtn'); if(button) button.setAttribute('disabled','');
-  Busy.show(cache.authMode==='register' ? 'Creating account…' : 'Signing in…');
-  try{
-    if(cache.authMode==='register'){
-      const r=await jpost({ action:'register', userId:uid, pin, displayName:uid });
-      if(!r.ok) throw new Error(r.error||'Register failed');
-    }
-    const lg=await jpost({ action:'login', userId:uid, pin });
-    if(!lg.ok) throw new Error(lg.error||'Login failed');
-    store.set(uid, pin, remember); setMsg('#loginMsg','');
-    await precacheFor(uid);
-    cache.profile = cache.profile || { userId:uid, balance:0 };
-    cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
-    renderDash();
-  } catch(e){
-    setMsg('#loginMsg', e.message||'Auth error');
-  } finally {
-    Busy.hide();
-    if(button) button.removeAttribute('disabled');
-  }
-}
-
-// Submit (hide-on-reload: add to done set immediately)
-function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
-function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
-function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
-
-async function onSubmit(ev){
-  const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin();
-  if(!uid||!pin){ showToast('Please log in again.','bad'); return; }
-  const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ const t=tileEl(id); showTileToast(t,'Enter an answer','info'); return; }
-  const btn=ev.currentTarget; const tile=tileEl(id); if(!tile) return;
-
-  // Immediately record this tile as completed client-side to hide on future reloads
-  cache.done.add(id); persistDone();
-
-  // Lock + dim (no spinner), keep tile for toast, then slide to end later
-  removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked');
-  if(inp) inp.disabled=true; btn.disabled=true;
-
-  // Client-side quick verdict
-  let verdict='neutral', points=0;
-  try{
-    const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
-    const entry = gm?.map?.find(m => m.activityId === id);
-    if(entry && entry.hash){
-      const h = await sha256Hex(gm.salt + norm(answer));
-      if(h === entry.hash){ verdict='success'; points=Number(entry.points||0); } else { verdict='fail'; }
-    }
-  }catch{}
-
-  // Shimmer verdict
-  const SWITCH_MS = 150;
-  setTimeout(()=>{ removeClasses(tile,'processing'); addClasses(tile, verdict); }, SWITCH_MS);
-
-  // Toast (2s), then move to end
-  const TOAST_MS = 2000;
-  if(verdict==='success'){
-    const bal = Number($('#coinBalance')?.textContent||0) + points;
-    $('#coinBalance') && ($('#coinBalance').textContent = bal);
-    showTileToast(tile, `✅ Correct! +🪙 ${points}`, 'good');
-  } else if(verdict==='fail'){ showTileToast(tile, '❌ Not quite — recorded.', 'bad'); }
-  else { showTileToast(tile, 'ℹ️ Submitted.', 'info'); }
-
-  setTimeout(()=>{ addClasses(tile,'moving'); tile.style.order='999'; }, TOAST_MS);
-
-  // Submit to server
-  const SHIMMER_TOTAL = 700 + 600;
-  setTimeout(()=> addClasses(tile,'done'), SHIMMER_TOTAL);
-
-  try{
-    const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
-    if(!res.ok) throw new Error(res.error||'Submit failed');
-    const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok && $('#coinBalance')) $('#coinBalance').textContent = prof.balance;
-    const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
-
-    const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
-    cache.archive = cache.archive.filter(x => x.activityId !== id);
-    cache.archive.unshift({ activityId:id, title: act.title || id, points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0), correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)), answer, correctAnswer: act.correctAnswer || null, timestamp: new Date().toISOString() });
-    saveArchive(); renderArchive();
-
-    setTimeout(()=>{
-      tile.style.transform='scale(0.98)';
-      tile.style.opacity='0.0';
-      setTimeout(()=> tile.remove(), 260);
-    }, SHIMMER_TOTAL + 400);
-  } catch(e){
-    // If server failed, revert done state so tile can be retried after reload
-    cache.done.delete(id); persistDone();
-
-    removeClasses(tile,'processing','success','fail','neutral','done','locked','moving');
-    tile.style.order = '';
-    if(inp) inp.disabled=false; btn.disabled=false; showTileToast(tile, e.message || 'Error', 'bad');
-  }
-}
-
-// Events
-function wireEvents(){
-  const on = (sel, fn) => { const el=$(sel); if(el){ el.addEventListener('click', fn, { passive:true }); return true; } return false; };
-  on('#idLoginBtn',     ()=>goToPin('login'));
-  on('#idRegisterBtn',  ()=>goToPin('register'));
-  on('#primaryAuthBtn', onPrimaryAuth);
-  on('#backToIdBtn',    showAuthId);
-  on('#logoutBtn',      ()=>{ store.clear(); location.reload(); });
-  const archBtn = $('#archiveToggle');
-  if(archBtn){
-    archBtn.addEventListener('click', ()=>{
-      const p = $('#archivePanel'); const open = !p.hasAttribute('hidden');
-      if(open){ p.setAttribute('hidden',''); archBtn.setAttribute('aria-expanded','false'); }
-      else { p.removeAttribute('hidden'); archBtn.setAttribute('aria-expanded','true'); }
-    }, { passive:true });
-  }
-}
-
-// Boot
-async function boot(){
-  if(!document.body.getAttribute('data-state')) setState('auth-id');
-  wireEvents();
-  const y=$('#year'); if(y) y.textContent=new Date().getFullYear();
-  const build=$('#build'); if(build) build.textContent=(window.ASSET_VERSION||'dev');
-  const theme = localStorage.getItem('cc.theme'); document.documentElement.classList.toggle('light', theme==='light');
-  const tt = $('#themeToggle'); if(tt){ tt.onclick = ()=>{ const light = !document.documentElement.classList.contains('light'); document.documentElement.classList.toggle('light', light); localStorage.setItem('cc.theme', light?'light':'dark'); }; }
-
-  // Load preview and local caches early
-  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
-  loadDoneFromStorage(); // ensure we know completed IDs before first render
-  loadArchive(); renderArchive();
-
-  const uid=store.uid(), pin=store.pin();
-  if(uid && pin){
-    Busy.show('Loading your dashboard…');
-    try{
-      await precacheFor(uid);
-      renderDash();
-    } finally { Busy.hide(); }
-  }
-}
-
-document.readyState === 'loading'
-  ? document.addEventListener('DOMContentLoaded', boot, { once:true })
-  : boot();
-
-function bindProfileAvatarFromPayload(profile){
-  try{ if(profile && profile.avatarURL) setProfileAvatar(profile.avatarURL); }catch{}
-  var mount = document.getElementById('avatar-picker');
-  if (mount && window.AvatarPicker && profile && profile.userId){
-    var picker = window.AvatarPicker({
-      apiBase: ClassroomConfig.WEB_APP_URL,
-      user: { userId: profile.userId, avatarId: profile.avatarId||'', avatarURL: profile.avatarURL||'' },
-      avatars: (cache && cache.avatars) || (function(){ try{return JSON.parse(localStorage.getItem('cc.avatars')||'[]')}catch{return []} })(),
+  const avatarsP = jget({ action: 'getavatars' }).catch,
       onChanged: function(url, id){
         if (window.showToast) showToast('Avatar updated!');
         setProfileAvatar(url);
@@ -385,3 +190,16 @@ function bindProfileAvatarFromPayload(profile){
     picker.mount(mount);
   }
 }
+
+
+/* schedule hydration after all functions are parsed */
+try {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function once(){
+      document.removeEventListener('DOMContentLoaded', once);
+      try { hydrateDashFromCache(); } catch(e){}
+    });
+  } else {
+    setTimeout(function(){ try { hydrateDashFromCache(); } catch(e){} }, 0);
+  }
+} catch(e) {}
