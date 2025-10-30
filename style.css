@@ -68,27 +68,6 @@ body[data-state="app"] #dashboard{ display:block; }
 @keyframes spin{ to{ transform: rotate(360deg); } }
 .busy-text{ font-weight:700; letter-spacing:.2px; }
 
-/* ===== Section head + chipbar ===== */
-.section-head{ display:flex; align-items:center; gap:var(--s2); justify-content:space-between; flex-wrap:wrap; }
-.chipbar{
-  display:flex; gap:8px; align-items:center;
-  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
-  border-radius:999px; padding:6px 10px; box-shadow:var(--shadow);
-  min-height:34px; min-width:220px; flex:1 1 260px;
-}
-.chip{ display:flex; align-items:center; gap:6px; font-size:.85rem;
-  padding:4px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.16);
-  background:rgba(0,0,0,.12); white-space:nowrap; }
-.chip.good{ background:rgba(67,209,122,.16); border-color:rgba(67,209,122,.35); }
-.chip.bad{ background:rgba(255,107,107,.16); border-color:rgba(255,107,107,.35); }
-.chip.neutral{ background:rgba(255,204,102,.18); border-color:rgba(255,204,102,.4); }
-.chip .title{ max-width:140px; overflow:hidden; text-overflow:ellipsis; }
-
-@media (max-width:640px){
-  .section-head{ flex-direction:column; align-items:stretch; }
-  .chipbar{ width:100%; min-width:0; }
-}
-
 /* ===== Activities Grid: responsive 4→3→2→1 ===== */
 #activities{
   --tile-min: 240px;
@@ -122,56 +101,25 @@ body[data-state="app"] #dashboard{ display:block; }
 .activity.locked{ pointer-events:none; }
 .activity.done{ opacity:.6; filter:grayscale(.25) brightness(.95); }
 
-/* ===== Spinner/shimmer ===== */
-.activity::after, .activity::before{ position:absolute; inset:auto; content:''; pointer-events:none; }
-.activity::after{ inset:0; opacity:0; transition:opacity .15s ease; }
-.activity.processing::after,
-.activity.success::after,
-.activity.fail::after,
-.activity.neutral::after{ opacity:1; }
+/* ===== Per-tile processing overlay + shimmer verdict ===== */
+.activity::before, .activity::after{ position:absolute; content:''; pointer-events:none; }
+.activity::before{ display:none; }
+.activity.processing::before{ display:block; inset:0; background:rgba(10,12,22,.45); }
+.activity.processing::after{ width:28px; height:28px; top:50%; left:50%;
+  transform:translate(-50%, -50%); border:3px solid rgba(255,255,255,.35);
+  border-top-color: var(--accent); border-radius:50%; animation:spin 700ms linear infinite; }
 
-.activity.processing::before{
-  width:28px; height:28px; top:50%; left:50%;
-  transform:translate(-50%, -50%);
-  border:3px solid rgba(255,255,255,.35);
-  border-top-color: var(--accent);
-  border-radius:50%;
-  animation:spin 700ms linear infinite;
-}
-@keyframes busyBg{ 0%{ box-shadow:inset 0 0 0 0 rgba(127,90,240,.22); }
- 50%{ box-shadow:inset 0 0 32px 8px rgba(127,90,240,.34); }
- 100%{ box-shadow:inset 0 0 0 0 rgba(127,90,240,.22); } }
-.activity.processing::after{
-  background: linear-gradient(120deg, rgba(127,90,240,.25), rgba(46,125,143,.2)),
-              linear-gradient(180deg, rgba(255,255,255,.03), rgba(0,0,0,.06));
-  animation:busyBg 800ms linear infinite;
-}
+.activity.success::before, .activity.fail::before, .activity.neutral::before{ display:block; inset:0; opacity:0; animation-fill-mode:forwards; }
+.activity.success::before{ animation: verdictGreen 700ms ease, fadeGray 600ms ease 700ms forwards; }
+.activity.fail::before{    animation: verdictRed   700ms ease, fadeGray 600ms ease 700ms forwards; }
+.activity.neutral::before{ animation: verdictYellow700 700ms ease, fadeGray 600ms ease 700ms forwards; }
 
-.activity.success::after{ animation:shimmerGreen 900ms ease, fadeGray 700ms ease 900ms forwards; }
-.activity.fail::after{ animation:shimmerRed 900ms ease, fadeGray 700ms ease 900ms forwards; }
-.activity.neutral::after{ animation:shimmerYellow 900ms ease, fadeGray 700ms ease 900ms forwards; }
-
-@keyframes shimmerGreen{
-  0%{ background:rgba(67,209,122,.0); }
-  35%{ background:rgba(67,209,122,.35); }
-  70%{ background:linear-gradient(120deg, rgba(67,209,122,.35), rgba(127,90,240,.25)); }
-  100%{ background:rgba(67,209,122,.25); }
-}
-@keyframes shimmerRed{
-  0%{ background:rgba(255,107,107,.0); }
-  35%{ background:rgba(255,107,107,.35); }
-  70%{ background:linear-gradient(120deg, rgba(255,107,107,.35), rgba(127,90,240,.25)); }
-  100%{ background:rgba(255,107,107,.25); }
-}
-@keyframes shimmerYellow{
-  0%{ background:rgba(255,204,102,.0); }
-  35%{ background:rgba(255,204,102,.4); }
-  70%{ background:linear-gradient(120deg, rgba(255,204,102,.4), rgba(127,90,240,.25)); }
-  100%{ background:rgba(255,204,102,.3); }
-}
+@keyframes verdictGreen{ 0%{opacity:0;background:rgba(67,209,122,0);} 35%{opacity:1;background:rgba(67,209,122,.35);} 70%{background:rgba(67,209,122,.28);} 100%{opacity:1;background:rgba(67,209,122,.22);} }
+@keyframes verdictRed{    0%{opacity:0;background:rgba(255,107,107,0);} 35%{opacity:1;background:rgba(255,107,107,.35);} 70%{background:rgba(255,107,107,.28);} 100%{opacity:1;background:rgba(255,107,107,.22);} }
+@keyframes verdictYellow700{0%{opacity:0;background:rgba(255,204,102,0);} 35%{opacity:1;background:rgba(255,204,102,.45);} 70%{background:rgba(255,204,102,.32);} 100%{opacity:1;background:rgba(255,204,102,.26);} }
 @keyframes fadeGray{ to{ background:rgba(128,128,128,.18); } }
 
-/* ===== Archive ===== */
+/* ===== Archive (kept; chips removed) ===== */
 .archive{ margin-top:var(--s3); }
 .archive-toggle{ width:100%; text-align:left; display:flex; align-items:center; gap:10px;
   background:transparent; color:var(--text); border-color:rgba(255,255,255,.16); }
@@ -192,3 +140,8 @@ body[data-state="app"] #dashboard{ display:block; }
 .pill.neutral{ background:rgba(255,204,102,.2); border-color:rgba(255,204,102,.4); }
 .archive-item .answer{ white-space:pre-wrap; background:rgba(0,0,0,.2); padding:6px 8px; border-radius:8px; }
 .archive-item .correct{ opacity:.9; }
+
+/* ===== Footer / Toast ===== */
+.footer{ text-align:center; color:var(--muted); padding:24px 0 48px; }
+.toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+  background:rgba(0,0,0,.8); color:#fff; padding:10px 14px; border-radius:10px; box-shadow:var(--shadow); z-index:10000; }

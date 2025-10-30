@@ -1,9 +1,8 @@
-// Classroom Challenge — app v14 (auth fixes + busy overlay)
+// Classroom Challenge — app v15 (tile busy overlay + smoother shimmer, chips removed)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
 const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities', subs:'cc.subs', lb:'cc.lb', gm:'cc.grading', arch:'cc.archive' };
-
 const $  = (s,root=document)=> root.querySelector(s);
 const $$ = (s,root=document)=> Array.from(root.querySelectorAll(s));
 
@@ -49,11 +48,7 @@ const jget  = p    => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method
 const jpost = body => fetch(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:new URLSearchParams(body) }).then(r=>r.json());
 
 // State/UI helpers
-function setState(s){
-  document.body.setAttribute('data-state', s);
-  const tt = $('#themeToggle');
-  if (tt) tt.classList.toggle('hidden', s==='app');
-}
+function setState(s){ document.body.setAttribute('data-state', s); const tt = $('#themeToggle'); if (tt) tt.classList.toggle('hidden', s==='app'); }
 const setMsg = (sel, m) => { const el=$(sel); if(el) el.textContent = m||''; };
 const norm = s => (s||'').toString().trim().toLowerCase();
 async function sha256Hex(str){ const enc=new TextEncoder(); const buf=await crypto.subtle.digest('SHA-256', enc.encode(str)); return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join(''); }
@@ -119,19 +114,6 @@ function renderArchive(){
     li.setAttribute('aria-expanded', open?'false':'true');
   }));
 }
-function renderArchiveChip(){
-  const chipbar = $('#archiveChip'); if(!chipbar) return; chipbar.innerHTML='';
-  const recent = (cache.archive||[]).slice(0,5);
-  if(!recent.length){ chipbar.classList.add('hidden'); return; }
-  chipbar.classList.remove('hidden');
-  recent.forEach(item=>{
-    const cls = item.correct===true?'good':item.correct===false?'bad':'neutral';
-    const emoji = item.correct===true?'✅':item.correct===false?'❌':'ℹ️';
-    const div=document.createElement('div'); div.className='chip '+cls; div.dataset.id=item.activityId;
-    div.innerHTML = `<span class="e">${emoji}</span><span class="title">${item.title||item.activityId}</span>`;
-    chipbar.appendChild(div);
-  });
-}
 
 // Data fetching
 async function precacheFor(uid){
@@ -147,7 +129,7 @@ async function precacheFor(uid){
   if(gm.ok){   cache.gm   = gm; try{ localStorage.setItem(K.gm,   JSON.stringify(gm)); }catch{} }
   if(subs.ok){ cache.done = new Set((subs.submissions||[]).map(s=>s.activityId)); try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
   if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
-  loadArchive(); renderArchive(); renderArchiveChip();
+  loadArchive(); renderArchive();
 }
 
 function renderDash(){
@@ -155,7 +137,7 @@ function renderDash(){
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
-  renderArchive(); renderArchiveChip();
+  renderArchive();
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
 }
 
@@ -213,7 +195,7 @@ async function onPrimaryAuth(){
   }
 }
 
-// Submit
+// Submit (tile-level busy + shimmer verdict)
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
 function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
 function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
@@ -239,7 +221,8 @@ async function onSubmit(ev){
     }
   }catch{}
 
-  setTimeout(()=>{ removeClasses(tile,'processing'); addClasses(tile, verdict); }, 150);
+  const SWITCH_MS = 150;
+  setTimeout(()=>{ removeClasses(tile,'processing'); addClasses(tile, verdict); }, SWITCH_MS);
 
   if(verdict==='success'){
     const bal = Number($('#coinBalance')?.textContent||0) + points;
@@ -248,8 +231,8 @@ async function onSubmit(ev){
   } else if(verdict==='fail'){ showToast('❌ Not quite — recorded.','bad'); }
   else { showToast('ℹ️ Submitted.',''); }
 
-  const SHIMMER_MS = 900 + 700;
-  setTimeout(()=> addClasses(tile,'done'), SHIMMER_MS);
+  const SHIMMER_TOTAL = 700 + 600;
+  setTimeout(()=> addClasses(tile,'done'), SHIMMER_TOTAL);
 
   try{
     const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
@@ -260,9 +243,9 @@ async function onSubmit(ev){
     const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
     cache.archive = cache.archive.filter(x => x.activityId !== id);
     cache.archive.unshift({ activityId:id, title: act.title || id, points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0), correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)), answer, correctAnswer: act.correctAnswer || null, timestamp: new Date().toISOString() });
-    saveArchive(); renderArchive(); renderArchiveChip();
+    saveArchive(); renderArchive();
 
-    setTimeout(()=>{ tile.style.transform='scale(0.98)'; tile.style.opacity='0.0'; setTimeout(()=> tile.remove(), 260); }, SHIMMER_MS + 150);
+    setTimeout(()=>{ tile.style.transform='scale(0.98)'; tile.style.opacity='0.0'; setTimeout(()=> tile.remove(), 260); }, SHIMMER_TOTAL + 120);
   } catch(e){
     removeClasses(tile,'processing','success','fail','neutral','done','locked');
     if(inp) inp.disabled=false; btn.disabled=false; showToast(e.message,'bad');
@@ -285,14 +268,6 @@ function wireEvents(){
       else { p.removeAttribute('hidden'); archBtn.setAttribute('aria-expanded','true'); }
     }, { passive:true });
   }
-  const chip = $('#archiveChip');
-  if(chip){
-    chip.addEventListener('click', ()=>{
-      const p = $('#archivePanel'), btn = $('#archiveToggle');
-      if(p.hasAttribute('hidden')){ p.removeAttribute('hidden'); btn && btn.setAttribute('aria-expanded','true'); }
-      p.scrollIntoView({behavior:'smooth', block:'start'});
-    }, { passive:true });
-  }
 }
 
 // Boot
@@ -305,7 +280,7 @@ async function boot(){
   const tt = $('#themeToggle'); if(tt){ tt.onclick = ()=>{ const light = !document.documentElement.classList.contains('light'); document.documentElement.classList.toggle('light', light); localStorage.setItem('cc.theme', light?'light':'dark'); }; }
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
   const uid=store.uid(), pin=store.pin();
-  loadArchive(); renderArchive(); renderArchiveChip();
+  loadArchive(); renderArchive();
   if(uid && pin){
     Busy.show('Loading your dashboard…');
     try{
