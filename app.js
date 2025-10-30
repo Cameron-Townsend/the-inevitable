@@ -92,6 +92,20 @@ function renderActivities(list, doneSet){
   wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit));
 }
 
+// View helpers
+function showAuth(){ $('#authLayout').classList.remove('hidden'); $('#pinPanel').classList.add('hidden'); $('#dashboard').classList.add('hidden'); $('#themeToggle').classList.remove('hidden'); }
+function showPin(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.remove('hidden'); $('#dashboard').classList.add('hidden'); $('#themeToggle').classList.remove('hidden'); }
+function showApp(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.add('hidden'); $('#dashboard').classList.remove('hidden'); $('#themeToggle').classList.add('hidden'); }
+function hideAuthPanels(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.add('hidden'); $('#themeToggle').classList.add('hidden'); }
+
+function renderDash(){
+  // 👇 Ensure the app section is visible and auth is hidden
+  showApp();
+  renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
+  renderLeaderboard(cache.lb||[]);
+  renderActivities(cache.acts||[], cache.done||new Set());
+}
+
 async function precacheFor(uid){
   $('#precacheHint').classList.remove('hidden');
   const [acts, lb, gm, subs, prof] = await Promise.all([
@@ -107,19 +121,6 @@ async function precacheFor(uid){
   if(subs.ok) { cache.done = new Set((subs.submissions||[]).map(s=>s.activityId)); localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }
   if(prof.ok) { cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }
   $('#precacheHint').classList.add('hidden');
-}
-
-// View helpers
-function showAuth(){ $('#authLayout').classList.remove('hidden'); $('#pinPanel').classList.add('hidden'); $('#dashboard').classList.add('hidden'); $('#themeToggle').classList.remove('hidden'); }
-function showPin(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.remove('hidden'); $('#dashboard').classList.add('hidden'); $('#themeToggle').classList.remove('hidden'); }
-function showApp(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.add('hidden'); $('#dashboard').classList.remove('hidden'); $('#themeToggle').classList.add('hidden'); }
-function hideAuthPanels(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.add('hidden'); $('#themeToggle').classList.add('hidden'); }
-
-function renderDash(){
-  hideAuthPanels();
-  renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
-  renderLeaderboard(cache.lb||[]);
-  renderActivities(cache.acts||[], cache.done||new Set());
 }
 
 // Step 1 actions
@@ -170,14 +171,11 @@ async function onPrimaryAuth(){
     if(!res.ok){ throw new Error(res.error||'Login failed'); }
     store.set(uid, pin, remember); setMsg('#loginMsg','');
 
-    // Ensure caches (activities etc.) then render
     if(!cache.acts) await precacheFor(uid);
 
-    // Update profile with server-confirmed balance/name
     const prof = await jget({action:'getprofile', userId:uid});
     if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:res.displayName||uid }; }
 
-    hideAuthPanels();
     renderDash();
   } catch(e){ setMsg('#loginMsg', e.message); }
   finally{ $('#primaryAuthBtn').disabled = false; }
@@ -189,17 +187,14 @@ async function onSubmit(ev){
   const inp=$('#ans-'+id); const answer=(inp.value||'').trim(); if(!answer){ showToast('Enter an answer','bad'); return; }
 
   const tile = tileEl(id);
-  // Lock and show busy overlay
   setTileState(id, 'processing');
   inp.disabled=true; ev.currentTarget.disabled=true;
 
-  // Client pre‑grade (still show busy during hashing)
-  let instantCorrect = null; let points=0; let hasKey=false;
+  let instantCorrect = null; let points=0;
   try{
     const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
     const entry = gm?.map?.find(m => m.activityId === id);
     if(entry && entry.hash){
-      hasKey = true;
       const h = await sha256Hex(gm.salt + norm(answer));
       if(h === entry.hash){ instantCorrect = true; points = Number(entry.points||0); }
     }
@@ -209,31 +204,25 @@ async function onSubmit(ev){
     const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
     if(!res.ok){ throw new Error(res.error||'Submit failed'); }
 
-    // Decide final state
     if(res.correct === true){
       setTileState(id, 'success');
       cache.done.add(id);
-      // Optimistic coin bump if needed
       if(!instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; }
       else { const bal = Number($('#coinBalance').textContent||0) + points; $('#coinBalance').textContent = bal; }
       showToast(`✅ Correct! +🪙 ${res.pointsAwarded||points}`,'good');
-      // Mark done & keep disabled
       tile.classList.add('done','locked');
     } else if(res.correct === false){
       setTileState(id, 'fail');
       showToast('❌ Not quite — try again later.','bad');
-      // Re-enable after glow ends
       setTimeout(()=>{ setTileState(id, ''); inp.disabled=false; ev.currentTarget.disabled=false; }, 900);
-    } else { // null (no right/wrong)
+    } else {
       setTileState(id, 'neutral');
       showToast('ℹ️ Submission received.','');
       tile.classList.add('done','locked');
     }
 
-    // Refresh leaderboard
     const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
   } catch(e){
-    // Roll back UI on error
     setTileState(id, '');
     inp.disabled=false; ev.currentTarget.disabled=false;
     showToast(e.message,'bad');
@@ -268,10 +257,8 @@ $('#themeToggle').addEventListener('click', ()=>{
 
   const uid = store.uid(); const pin = store.pin();
   if(uid && pin){
-    // Returning user goes straight to app
     precacheFor(uid).finally(()=>{ renderDash(); });
   } else {
-    // Show auth, theme toggle visible
     showAuth();
   }
 
