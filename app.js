@@ -1,4 +1,4 @@
-// Classroom Challenge — app v15 (tile busy overlay + smoother shimmer, chips removed)
+// Classroom Challenge — app v16 (tile-based toasts)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
@@ -115,6 +115,20 @@ function renderArchive(){
   }));
 }
 
+// Tile toast helper
+function showTileToast(tile, msg, kind='info'){
+  if(!tile) return;
+  const div = document.createElement('div');
+  div.className = `tile-toast ${kind}`;
+  div.textContent = msg;
+  tile.appendChild(div);
+  setTimeout(()=> div.remove(), 2000);
+}
+
+// Global toast still available for site-wide notices (login errors, etc.)
+let toastTimer=null;
+function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
+
 // Data fetching
 async function precacheFor(uid){
   const [acts, lb, gm, subs, prof] = await Promise.all([
@@ -195,17 +209,15 @@ async function onPrimaryAuth(){
   }
 }
 
-// Submit (tile-level busy + shimmer verdict)
+// Submit (tile-level busy + shimmer verdict + tile toast)
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
 function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
 function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
-let toastTimer=null;
-function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
 async function onSubmit(ev){
   const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin();
   if(!uid||!pin){ showToast('Please log in again.','bad'); return; }
-  const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ showToast('Enter an answer','bad'); return; }
+  const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ const t=tileEl(id); showTileToast(t,'Enter an answer','info'); return; }
   const btn=ev.currentTarget; const tile=tileEl(id); if(!tile) return;
 
   removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked');
@@ -227,9 +239,9 @@ async function onSubmit(ev){
   if(verdict==='success'){
     const bal = Number($('#coinBalance')?.textContent||0) + points;
     $('#coinBalance') && ($('#coinBalance').textContent = bal);
-    showToast(`✅ Correct! +🪙 ${points}`,'good');
-  } else if(verdict==='fail'){ showToast('❌ Not quite — recorded.','bad'); }
-  else { showToast('ℹ️ Submitted.',''); }
+    showTileToast(tile, `✅ Correct! +🪙 ${points}`, 'good');
+  } else if(verdict==='fail'){ showTileToast(tile, '❌ Not quite — recorded.', 'bad'); }
+  else { showTileToast(tile, 'ℹ️ Submitted.', 'info'); }
 
   const SHIMMER_TOTAL = 700 + 600;
   setTimeout(()=> addClasses(tile,'done'), SHIMMER_TOTAL);
@@ -248,7 +260,7 @@ async function onSubmit(ev){
     setTimeout(()=>{ tile.style.transform='scale(0.98)'; tile.style.opacity='0.0'; setTimeout(()=> tile.remove(), 260); }, SHIMMER_TOTAL + 120);
   } catch(e){
     removeClasses(tile,'processing','success','fail','neutral','done','locked');
-    if(inp) inp.disabled=false; btn.disabled=false; showToast(e.message,'bad');
+    if(inp) inp.disabled=false; btn.disabled=false; showTileToast(tile, e.message || 'Error', 'bad');
   }
 }
 
