@@ -136,22 +136,27 @@ let toastTimer=null;
 function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
 // Data fetching
-async async function precacheFor(uid){
-  const avatarsP = jget({ action: 'getavatars' }).catch(()=>({ok:false}));
-  const [acts, lb, gm, subs, prof] = await Promise.all([
+async function precacheFor(uid){
+  const avatarsP = jget({ action: 'getavatars' }).catch(function(){ return { ok:false }; });
+
+  return Promise.all([
     jget({ action: 'getactivities' }),
     jget({ action: 'leaderboard' }),
     jget({ action: 'getgradingmap' }),
     uid ? jget({ action: 'getsubmissions', userId: uid }) : Promise.resolve({ ok:true, submissions: [] }),
     uid ? jget({ action: 'getprofile',    userId: uid }) : Promise.resolve({ ok:true, userId: uid, balance: 0 })
-  ]);
-  if (acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{} }
-  if (lb.ok){   cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb));   }catch{} }
-  if (gm.ok){   cache.gm   = { salt: gm.salt, map: gm.map }; try{ localStorage.setItem(K.gm, JSON.stringify(cache.gm)); }catch{} }
-  if (subs.ok){ cache.done = new Set(subs.submissions.map(s=>s.activityId)); try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
-  if (prof.ok){ cache.profile = prof; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
-  const av = await avatarsP;
-  if (av.ok){ cache.avatars = av.avatars; try{ localStorage.setItem('cc.avatars', JSON.stringify(cache.avatars)); }catch{} }
+  ]).then(function(results){
+    var acts = results[0], lb = results[1], gm = results[2], subs = results[3], prof = results[4];
+    if (acts && acts.ok) { cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch(e){} }
+    if (lb && lb.ok)     { cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb));   }catch(e){} }
+    if (gm && gm.ok)     { cache.gm   = { salt: gm.salt, map: gm.map }; try{ localStorage.setItem(K.gm, JSON.stringify(cache.gm)); }catch(e){} }
+    if (subs && subs.ok) { cache.done = new Set(subs.submissions.map(function(s){ return s.activityId; })); try{ localStorage.setItem(K.subs, JSON.stringify(Array.from(cache.done))); }catch(e){} }
+    if (prof && prof.ok) { cache.profile = prof; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch(e){} }
+    return avatarsP;
+  }).then(function(av){
+    if (av && av.ok) { cache.avatars = av.avatars; try{ localStorage.setItem('cc.avatars', JSON.stringify(cache.avatars)); }catch(e){} }
+    return true;
+  }).catch(function(){ return true; });
 }
 
 function renderDash(){
