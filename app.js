@@ -16,13 +16,18 @@ const store = {
 
 // Basic fetch wrappers
 const jget  = p   => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method:'GET' }).then(r=>r.json());
-const jpost = body=> fetch(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r=>r.json());
+// Use form-encoded POST to avoid CORS preflight
+const jpost = body => fetch(WEB_APP_URL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+  body: new URLSearchParams(body)
+}).then(r => r.json());
 
 // DOM helpers
 const $ = s => document.querySelector(s);
 const setMsg = (id, m)=>{ $(id).textContent = m||''; };
 
-// Crypto helpers for client pre‑grading
+// Crypto helpers for client pre-grading
 const norm = s => (s||'').toString().trim().toLowerCase();
 async function sha256Hex(str){
   const enc = new TextEncoder();
@@ -104,7 +109,7 @@ $('#loginBtn').addEventListener('click', onLogin);
 $('#registerBtn').addEventListener('click', onRegister);
 $('#logoutBtn').addEventListener('click', ()=>{ store.clear(); location.reload(); });
 
-// Submit with instant client pre‑grade
+// Submit with instant client pre-grade
 async function onSubmit(ev){
   const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin(); if(!uid||!pin){ alert('Please log in again.'); return; }
   const inp=$('#ans-'+id); const answer=(inp.value||'').trim(); if(!answer){ alert('Enter an answer'); return; }
