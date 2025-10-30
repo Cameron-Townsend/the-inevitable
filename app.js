@@ -74,10 +74,24 @@ function loadDoneFromStorage(){ try{ const arr = JSON.parse(localStorage.getItem
 function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
 
 // Renderers
-function renderProfile(p){ $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId); $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0); }
+function renderProfile(p){ $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId); $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0);   try{ if(p && p.avatarURL) setProfileAvatar(p.avatarURL); }catch{} }
+
 function renderLeaderboard(rows){
   const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — 🪙 ${r.score}`; ol.appendChild(li); });
+  (rows||[]).forEach((r,i)=>{
+    const li = document.createElement('li');
+    const m = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    const img = document.createElement('img');
+    img.className='avatar-chip';
+    img.alt=(r.name||r.userId)+' avatar';
+    img.src = r.avatarURL || 'avatars/happy-face.png';
+    img.setAttribute('data-user', r.userId);
+    const text = document.createElement('span');
+    text.textContent = ` ${m} ${r.name} — 🪙 ${r.score}`;
+    li.appendChild(img);
+    li.appendChild(text);
+    ol.appendChild(li);
+  });
 }
 function renderLeaderboardPreview(rows){
   const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
@@ -145,8 +159,13 @@ function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textCont
 
 // Data fetching
 async function precacheFor(uid){
+  const avatarsP = jget({action:'getavatars'});
+  return (async ()=>{
   const [acts, lb, gm, subs, prof] = await Promise.all([
-    jget({action:'getactivities'}),
+    jget({action:'getactivities'
+  const avatars = await avatarsP; if(avatars.ok){ cache.avatars = avatars.avatars; try{ localStorage.setItem('cc.avatars', JSON.stringify(cache.avatars)); }catch{} }
+  return true; })();
+}),
     jget({action:'leaderboard'}),
     jget({action:'getgradingmap'}),
     uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
@@ -361,6 +380,7 @@ function bindProfileAvatarFromPayload(payload){
     var picker = window.AvatarPicker({
       apiBase: ClassroomConfig.WEB_APP_URL,
       user: { userId: payload.userId, avatarId: payload.avatarId||'', avatarURL: payload.avatarURL||'' },
+    avatars: (cache && cache.avatars) || (function(){ try{return JSON.parse(localStorage.getItem('cc.avatars')||'[]')}catch{return []} })(),
       onChanged: function(url, id){
         if (window.showToast) showToast('Avatar updated!');
         setProfileAvatar(url);
@@ -377,26 +397,6 @@ function bindProfileAvatarFromPayload(payload){
 }
 
 
-// Lightweight fetch interceptor to bind avatar when getprofile is requested
-(function(){
-  var _fetch = window.fetch;
-  window.fetch = function(input, init){
-    var url = (typeof input === 'string') ? input : (input && input.url) || '';
-    var isProfile = url.indexOf('action=getprofile') !== -1;
-    return _fetch(input, init).then(function(res){
-      if (isProfile){
-        try {
-          // Clone to read once
-          return res.clone().json().then(function(json){
-            if (json && json.ok) bindProfileAvatarFromPayload(json);
-            return res;
-          });
-        } catch(e){ return res; }
-      }
-      return res;
-    });
-  };
-})();
 
 
 // Decorate leaderboard entries with avatar chips if backend provides avatar URLs
