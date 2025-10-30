@@ -1,4 +1,9 @@
-// Set this to your Apps Script Web App /exec URL
-window.APP_CONFIG = {
-  API: "https://script.google.com/macros/s/AKfycbyDfsMV41HVd0t6m0oK3DhEDHX6-v5Th272RmVhHNp384PhbCJZgX0y7XsWmN0kTGzBqA/exec"
+// config.js
+// Set your deployed Google Apps Script Web App URL here.
+// This file persists across app.js updates.
+window.ClassroomConfig = {
+  WEB_APP_URL: 'https://script.google.com/macros/s/REPLACE_WITH_YOUR_DEPLOYED_ID/exec',
+  // If true, PIN is stored only for the current browser session (safer default).
+  // If false, and the user checks "Remember PIN", the PIN will persist in localStorage.
+  USE_SESSION_ONLY: true
 };

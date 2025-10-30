@@ -1,725 +1,144 @@
-// app.js (v6) — top-row panels layout + robust auth/UI + caching
+// ==== Config via external config.js ====
+// config.js defines: window.ClassroomConfig = { WEB_APP_URL: 'https://.../exec', USE_SESSION_ONLY: true }
+const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
+if(!WEB_APP_URL){ console.error('WEB_APP_URL missing. Set it in config.js'); }
 
-// --- Config ---
-const API = (window.APP_CONFIG && window.APP_CONFIG.API) || 'WEB_APP_URL_HERE';
+// ==== Storage Keys ====
+const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities', subs:'cc.subs', lb:'cc.lb', gm:'cc.grading' };
 
-// --- Busy helpers ---
-var _busyRefCount = 0;
-function beginBusy(){
-  _busyRefCount++;
-  const b = document.getElementById('refreshBtn');
-  if (b) b.classList.add('btn-busy');
-}
-function endBusy(){
-  _busyRefCount = Math.max(0, _busyRefCount - 1);
-  if (_busyRefCount === 0) {
-    const b = document.getElementById('refreshBtn');
-    if (b) b.classList.remove('btn-busy');
-  }
-}
+// Storage helpers (PIN in session unless "remember")
+const store = {
+  set(uid, pin, remember){ localStorage.setItem(K.uid, uid); (remember? localStorage: sessionStorage).setItem(K.pin, pin); if(!remember) localStorage.removeItem(K.pin); },
+  clear(){ localStorage.removeItem(K.uid); localStorage.removeItem(K.pin); sessionStorage.removeItem(K.pin); },
+  uid(){ return localStorage.getItem(K.uid); },
+  pin(){ return sessionStorage.getItem(K.pin) || localStorage.getItem(K.pin); }
+};
 
-// --- Client-side pregrading ---
-let GRADING = { salt: null, hashes: {}, points: {} };
+// Basic fetch wrappers
+const jget  = p   => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method:'GET' }).then(r=>r.json());
+const jpost = body=> fetch(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r=>r.json());
 
-// --- Activities cache ---
-const ACT_CACHE_KEY = 'ACTIVITIES_CACHE_V1'; // { ts, signature, activities: [...] }
-const ACT_CACHE_TTL_MS = 1000 * 60 * 10;     // 10 minutes
+// DOM helpers
+const $ = s => document.querySelector(s);
+const setMsg = (id, m)=>{ $(id).textContent = m||''; };
 
-// --- DOM refs ---
-const containerEl = document.querySelector('.container');
-
-// Auth
-const authEl = document.getElementById('auth');
-const stepUid = document.getElementById('step-uid');
-const stepPin = document.getElementById('step-pin');
-const stepReg = document.getElementById('step-register');
-
-const continueBtn = document.getElementById('continueBtn');
-const loginBtn = document.getElementById('loginBtn');
-const registerBtn = document.getElementById('registerBtn');
-const backToIdBtn = document.getElementById('backToIdBtn');
-const backToIdBtn2 = document.getElementById('backToIdBtn2');
-
-const userIdEl = document.getElementById('userId');
-const pinEl = document.getElementById('pin');
-const pinNewEl = document.getElementById('pinNew');
-const displayNameEl = document.getElementById('displayName');
-const helloNameEl = document.getElementById('helloName');
-const authMsg = document.getElementById('authMsg');
-
-// Main
-const profileEl = document.getElementById('profile');
-const greetingEl = document.getElementById('greeting');
-const balanceEl = document.getElementById('balance');
-const boardBody = document.getElementById('boardBody');
-const activitiesEl = document.getElementById('activities');
-const activitiesCard = document.getElementById('activitiesCard');
-const refreshBtn = document.getElementById('refreshBtn');
-
-// Buttons (guarded binds)
-if (continueBtn) continueBtn.onclick = handleContinue;
-if (loginBtn) loginBtn.onclick = () => loginOrRegister('login');
-if (registerBtn) registerBtn.onclick = () => loginOrRegister('register');
-if (backToIdBtn) backToIdBtn.onclick = showIdStep;
-if (backToIdBtn2) backToIdBtn2.onclick = showIdStep;
-const logoutBtnEl = document.getElementById('logoutBtn');
-if (logoutBtnEl) logoutBtnEl.onclick = logout;
-if (refreshBtn) refreshBtn.onclick = () => refreshAfterAuth(true);
-
-// --- Helpers ---
-function logErr(ctx, e){ console.error('[UI]', ctx, e); }
-async function safeJson(res) {
-  const ct = res.headers.get('content-type') || '';
-  if (!ct.includes('application/json')) {
-    const text = await res.text();
-    throw new Error(`Non-JSON response (${res.status}): ${text.slice(0,160)}...`);
-  }
-  return res.json();
-}
-function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''; return p.innerHTML; }
-function normalizeAnswer(s){ return (s||'').trim().toLowerCase(); }
+// Crypto helpers for client pre‑grading
+const norm = s => (s||'').toString().trim().toLowerCase();
 async function sha256Hex(str){
-  const enc = new TextEncoder().encode(str);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  const b = Array.from(new Uint8Array(buf));
-  return b.map(x => x.toString(16).padStart(2,'0')).join('');
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join('');
 }
 
-// --- Auth state ---
-function currentUser(){
-  const u = localStorage.getItem('userId');
-  const p = localStorage.getItem('pin');
-  return (u && p) ? {userId:u, pin:p} : null;
-}
-function setUser(u){
-  if (u){ localStorage.setItem('userId',u.userId); localStorage.setItem('pin',u.pin); }
-  else { localStorage.removeItem('userId'); localStorage.removeItem('pin'); }
+// Cached state
+const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set() };
+
+function renderProfile(p){ $('#displayName').textContent = p.displayName||p.userId; $('#coinBalance').textContent = p.balance??0; }
+function renderLeaderboard(rows){ const ol=$('#leaderboard'); ol.innerHTML=''; (rows||[]).forEach(r=>{ const li=document.createElement('li'); li.textContent=`${r.name} — ${r.score} coins`; ol.appendChild(li); }); }
+function renderActivities(list, doneSet){ const wrap=$('#activities'); wrap.innerHTML=''; (list||[]).forEach(a=>{ const done = doneSet.has(a.activityId); const div=document.createElement('div'); div.className='activity'+(done?' done':''); div.innerHTML=`<h3>${a.title}</h3><p>${a.prompt||''}</p><p>Worth ${a.points} coins</p><div class="row"><input placeholder="Your answer" id="ans-${a.activityId}" ${done?'disabled':''}><button data-id="${a.activityId}" ${done?'disabled':''}>Submit</button></div>`; wrap.appendChild(div); }); wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit)); }
+
+async function precacheFor(uid){
+  $('#precacheHint').classList.remove('hidden');
+  const [acts, lb, gm, subs, prof] = await Promise.all([
+    jget({action:'getactivities'}),
+    jget({action:'leaderboard'}),
+    jget({action:'getgradingmap'}),
+    uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
+    uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0})
+  ]);
+  if(acts.ok) { cache.acts = acts.activities; localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }
+  if(lb.ok)   { cache.lb   = lb.leaderboard; localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }
+  if(gm.ok)   { cache.gm   = gm; localStorage.setItem(K.gm, JSON.stringify(cache.gm)); }
+  if(subs.ok) { cache.done = new Set((subs.submissions||[]).map(s=>s.activityId)); localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }
+  if(prof.ok) { cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }
+  $('#precacheHint').classList.add('hidden');
 }
 
-// --- Layout show/hide + container class toggle ---
-function uiUpdateAuth(){
-  const u = currentUser();
-  if (u){
-    if (containerEl) containerEl.classList.add('logged-in');
-    if (authEl){ authEl.hidden = true; authEl.style.display = 'none'; }
-    if (profileEl){ profileEl.hidden = false; profileEl.style.display = 'block'; }
-    if (activitiesCard){ activitiesCard.hidden = false; activitiesCard.style.display = 'block'; }
-    if (greetingEl) greetingEl.textContent = `Hello, ${u.userId}`;
-  } else {
-    if (containerEl) containerEl.classList.remove('logged-in');
-    if (authEl){ authEl.hidden = false; authEl.style.display = 'block'; }
-    if (profileEl){ profileEl.hidden = true; profileEl.style.display = 'none'; }
-    if (activitiesCard){ activitiesCard.hidden = true; activitiesCard.style.display = 'none'; }
-    if (activitiesEl) activitiesEl.innerHTML = '';
-    showIdStep();
-  }
+function renderDash(){
+  $('#identifyPanel').classList.add('hidden'); $('#pinPanel').classList.add('hidden'); $('#dashboard').classList.remove('hidden');
+  renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
+  renderLeaderboard(cache.lb||[]);
+  renderActivities(cache.acts||[], cache.done||new Set());
 }
 
-// --- Multi-stage auth UI ---
-function showIdStep(){
-  stepUid.style.display = 'block';
-  stepPin.style.display = 'none';
-  stepReg.style.display = 'none';
-  authMsg.textContent = '';
-}
-function showPinStep(name){
-  stepUid.style.display = 'none';
-  stepPin.style.display = 'block';
-  stepReg.style.display = 'none';
-  helloNameEl.textContent = name || '';
-  authMsg.textContent = '';
-  pinEl.value = '';
-  pinEl.focus();
-}
-function showRegisterStep(){
-  stepUid.style.display = 'none';
-  stepPin.style.display = 'none';
-  stepReg.style.display = 'block';
-  authMsg.textContent = '';
-  displayNameEl.value = '';
-  pinNewEl.value = '';
-  displayNameEl.focus();
-}
-
-// --- Pre-warm activities cache ---
-(async function prewarmActivities(){
-  const cached = readActivitiesCache();
-  if (!cached){
-    beginBusy();
-    try{
-      const r = await fetch(API+'?action=getactivities&ts='+Date.now());
-      const d = await safeJson(r);
-      if (d.ok){
-        const sig = await activitiesSignature(d.activities||[]);
-        writeActivitiesCache(d.activities||[], sig);
-      }
-    }catch(e){ logErr('prewarmActivities', e); } finally { endBusy(); }
-  }
-})();
-
-// --- Continue → check user ---
-async function handleContinue(){
-  const userId = (userIdEl?.value||'').trim();
-  if (!userId){ authMsg.textContent='Enter a User ID.'; return; }
-  authMsg.textContent = 'Checking…';
-
+// ID step → prefetch
+$('#idNextBtn').addEventListener('click', async ()=>{
+  const uid = $('#idOnly').value.trim(); if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
+  setMsg('#idMsg',''); $('#idNextBtn').disabled = true;
   try{
-    const res = await fetch(API, {
-      method: 'POST',
-      body: new URLSearchParams({ action:'checkuser', userId, ts: Date.now() })
-    });
-    const data = await safeJson(res);
-    if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
+    const check = await jget({action:'checkuser', userId:uid});
+    const name = check.ok && check.exists ? (check.displayName || uid) : uid;
+    $('#helloName').textContent = `Hi, ${name}!`;
+    $('#identifyPanel').classList.add('hidden'); $('#pinPanel').classList.remove('hidden');
+    // Start precache in background while they type PIN
+    precacheFor(uid).catch(()=>{});
+    // Stash uid immediately so we can continue after login
+    localStorage.setItem(K.uid, uid);
+  } catch(e){ setMsg('#idMsg', e.message); } finally { $('#idNextBtn').disabled = false; }
+});
 
-    if (data.exists){
-      localStorage.setItem('PREFETCH_USER', userId);
-      prefetchSubmissions(userId);
-      showPinStep(data.displayName || userId);
+// Login/Register
+async function onLogin(){
+  const uid = store.uid(); const pin = $('#pin').value.trim(); const remember=$('#rememberPin').checked && !USE_SESSION_ONLY;
+  if(!uid||!pin){ setMsg('#loginMsg','Enter PIN'); return; }
+  try{
+    $('#loginBtn').disabled=true; const res= await jpost({ action:'login', userId:uid, pin }); if(!res.ok) throw new Error(res.error||'Login failed');
+    store.set(uid, pin, remember); setMsg('#loginMsg','');
+    if(!cache.acts) await precacheFor(uid);
+    const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:res.displayName||uid }; }
+    renderDash();
+  } catch(e){ setMsg('#loginMsg', e.message); } finally { $('#loginBtn').disabled=false; }
+}
+
+async function onRegister(){
+  const uid = store.uid() || $('#idOnly').value.trim(); const pin=$('#pin').value.trim(); if(!uid||!pin){ setMsg('#loginMsg','Enter PIN'); return; }
+  const displayName = prompt('Display name?')?.trim()||uid;
+  try{
+    $('#registerBtn').disabled=true; const res= await jpost({ action:'register', userId:uid, pin, displayName }); if(!res.ok) throw new Error(res.error||'Register failed');
+    setMsg('#loginMsg','Registered! Logging you in…');
+    await onLogin();
+  } catch(e){ setMsg('#loginMsg', e.message); } finally { $('#registerBtn').disabled=false; }
+}
+
+$('#loginBtn').addEventListener('click', onLogin);
+$('#registerBtn').addEventListener('click', onRegister);
+$('#logoutBtn').addEventListener('click', ()=>{ store.clear(); location.reload(); });
+
+// Submit with instant client pre‑grade
+async function onSubmit(ev){
+  const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin(); if(!uid||!pin){ alert('Please log in again.'); return; }
+  const inp=$('#ans-'+id); const answer=(inp.value||'').trim(); if(!answer){ alert('Enter an answer'); return; }
+  let instantCorrect = null; let points=0;
+  try{
+    const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
+    const entry = gm?.map?.find(m => m.activityId === id);
+    if(entry && entry.hash){
+      const h = await sha256Hex(gm.salt + norm(answer));
+      if(h === entry.hash){ instantCorrect = true; points = Number(entry.points||0); }
+    }
+  }catch{}
+  if(instantCorrect){ cache.done.add(id); inp.disabled=true; ev.currentTarget.disabled=true; const bal = Number($('#coinBalance').textContent||0) + points; $('#coinBalance').textContent = bal; }
+  try{
+    const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
+    if(!res.ok){ throw new Error(res.error||'Submit failed'); }
+    if(res.correct){ cache.done.add(id); inp.disabled=true; ev.currentTarget.disabled=true; if(!instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; }
     } else {
-      showRegisterStep();
+      if(instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; cache.done.delete(id); inp.disabled=false; ev.currentTarget.disabled=false; }
+      alert('Not quite—try again later.');
     }
-  }catch(e){
-    logErr('handleContinue', e);
-    authMsg.innerHTML = `<span class="err">Login setup failed: ${escapeHtml(String(e.message||e))}</span>`;
+    const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
+  } catch(e){
+    if(instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; cache.done.delete(id); inp.disabled=false; ev.currentTarget.disabled=false; }
+    alert(e.message);
   }
 }
 
-async function prefetchSubmissions(userId){
-  try{
-    const res = await fetch(API + '?action=getsubmissions&userId=' + encodeURIComponent(userId));
-    const data = await safeJson(res);
-    if (data.ok){
-      sessionStorage.setItem('SUBMIT_CACHE_'+userId, JSON.stringify(data.submissions||[]));
-    }
-  }catch(e){ logErr('prefetchSubmissions', e); }
-}
+// Boot
+(function boot(){
+  $('#year').textContent = new Date().getFullYear();
+  document.documentElement.classList.toggle('light', localStorage.getItem('cc.theme')==='light');
+  $('#themeToggle').addEventListener('click', ()=>{ const light=document.documentElement.classList.toggle('light'); localStorage.setItem('cc.theme', light?'light':'dark'); });
 
-// (Remaining functions: loginOrRegister, logout, loadProfile, loadLeaderboard, 
-// loadSubmittedSet, renderActivities, etc.)
-// --- Paste remainder here if truncated in chat ---
-// app.js (v6) — top-row panels layout + robust auth/UI + caching
-
-// --- Config ---
-const API = (window.APP_CONFIG && window.APP_CONFIG.API) || 'WEB_APP_URL_HERE';
-
-// --- Busy helpers ---
-var _busyRefCount = 0;
-function beginBusy(){
-  _busyRefCount++;
-  const b = document.getElementById('refreshBtn');
-  if (b) b.classList.add('btn-busy');
-}
-function endBusy(){
-  _busyRefCount = Math.max(0, _busyRefCount - 1);
-  if (_busyRefCount === 0) {
-    const b = document.getElementById('refreshBtn');
-    if (b) b.classList.remove('btn-busy');
-  }
-}
-
-// --- Client-side pregrading ---
-let GRADING = { salt: null, hashes: {}, points: {} };
-
-// --- Activities cache ---
-const ACT_CACHE_KEY = 'ACTIVITIES_CACHE_V1'; // { ts, signature, activities: [...] }
-const ACT_CACHE_TTL_MS = 1000 * 60 * 10;     // 10 minutes
-
-// --- DOM refs ---
-const containerEl = document.querySelector('.container');
-
-// Auth
-const authEl = document.getElementById('auth');
-const stepUid = document.getElementById('step-uid');
-const stepPin = document.getElementById('step-pin');
-const stepReg = document.getElementById('step-register');
-
-const continueBtn = document.getElementById('continueBtn');
-const loginBtn = document.getElementById('loginBtn');
-const registerBtn = document.getElementById('registerBtn');
-const backToIdBtn = document.getElementById('backToIdBtn');
-const backToIdBtn2 = document.getElementById('backToIdBtn2');
-
-const userIdEl = document.getElementById('userId');
-const pinEl = document.getElementById('pin');
-const pinNewEl = document.getElementById('pinNew');
-const displayNameEl = document.getElementById('displayName');
-const helloNameEl = document.getElementById('helloName');
-const authMsg = document.getElementById('authMsg');
-
-// Main
-const profileEl = document.getElementById('profile');
-const greetingEl = document.getElementById('greeting');
-const balanceEl = document.getElementById('balance');
-const boardBody = document.getElementById('boardBody');
-const activitiesEl = document.getElementById('activities');
-const activitiesCard = document.getElementById('activitiesCard');
-const refreshBtn = document.getElementById('refreshBtn');
-
-// Buttons (guarded binds)
-if (continueBtn) continueBtn.onclick = handleContinue;
-if (loginBtn) loginBtn.onclick = () => loginOrRegister('login');
-if (registerBtn) registerBtn.onclick = () => loginOrRegister('register');
-if (backToIdBtn) backToIdBtn.onclick = showIdStep;
-if (backToIdBtn2) backToIdBtn2.onclick = showIdStep;
-const logoutBtnEl = document.getElementById('logoutBtn');
-if (logoutBtnEl) logoutBtnEl.onclick = logout;
-if (refreshBtn) refreshBtn.onclick = () => refreshAfterAuth(true);
-
-// --- Helpers ---
-function logErr(ctx, e){ console.error('[UI]', ctx, e); }
-async function safeJson(res) {
-  const ct = res.headers.get('content-type') || '';
-  if (!ct.includes('application/json')) {
-    const text = await res.text();
-    throw new Error(`Non-JSON response (${res.status}): ${text.slice(0,160)}...`);
-  }
-  return res.json();
-}
-function escapeHtml(s){ const p=document.createElement('p'); p.textContent=s||''; return p.innerHTML; }
-function normalizeAnswer(s){ return (s||'').trim().toLowerCase(); }
-async function sha256Hex(str){
-  const enc = new TextEncoder().encode(str);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  const b = Array.from(new Uint8Array(buf));
-  return b.map(x => x.toString(16).padStart(2,'0')).join('');
-}
-
-// --- Auth state ---
-function currentUser(){
-  const u = localStorage.getItem('userId');
-  const p = localStorage.getItem('pin');
-  return (u && p) ? {userId:u, pin:p} : null;
-}
-function setUser(u){
-  if (u){ localStorage.setItem('userId',u.userId); localStorage.setItem('pin',u.pin); }
-  else { localStorage.removeItem('userId'); localStorage.removeItem('pin'); }
-}
-
-// --- Layout show/hide + container class toggle ---
-function uiUpdateAuth(){
-  const u = currentUser();
-  if (u){
-    if (containerEl) containerEl.classList.add('logged-in');
-    if (authEl){ authEl.hidden = true; authEl.style.display = 'none'; }
-    if (profileEl){ profileEl.hidden = false; profileEl.style.display = 'block'; }
-    if (activitiesCard){ activitiesCard.hidden = false; activitiesCard.style.display = 'block'; }
-    if (greetingEl) greetingEl.textContent = `Hello, ${u.userId}`;
-  } else {
-    if (containerEl) containerEl.classList.remove('logged-in');
-    if (authEl){ authEl.hidden = false; authEl.style.display = 'block'; }
-    if (profileEl){ profileEl.hidden = true; profileEl.style.display = 'none'; }
-    if (activitiesCard){ activitiesCard.hidden = true; activitiesCard.style.display = 'none'; }
-    if (activitiesEl) activitiesEl.innerHTML = '';
-    showIdStep();
-  }
-}
-
-// --- Multi-stage auth UI ---
-function showIdStep(){
-  stepUid.style.display = 'block';
-  stepPin.style.display = 'none';
-  stepReg.style.display = 'none';
-  authMsg.textContent = '';
-}
-function showPinStep(name){
-  stepUid.style.display = 'none';
-  stepPin.style.display = 'block';
-  stepReg.style.display = 'none';
-  helloNameEl.textContent = name || '';
-  authMsg.textContent = '';
-  pinEl.value = '';
-  pinEl.focus();
-}
-function showRegisterStep(){
-  stepUid.style.display = 'none';
-  stepPin.style.display = 'none';
-  stepReg.style.display = 'block';
-  authMsg.textContent = '';
-  displayNameEl.value = '';
-  pinNewEl.value = '';
-  displayNameEl.focus();
-}
-
-// --- Pre-warm activities cache ---
-(async function prewarmActivities(){
-  const cached = readActivitiesCache();
-  if (!cached){
-    beginBusy();
-    try{
-      const r = await fetch(API+'?action=getactivities&ts='+Date.now());
-      const d = await safeJson(r);
-      if (d.ok){
-        const sig = await activitiesSignature(d.activities||[]);
-        writeActivitiesCache(d.activities||[], sig);
-      }
-    }catch(e){ logErr('prewarmActivities', e); } finally { endBusy(); }
-  }
+  const uid = store.uid(); const pin = store.pin();
+  if(uid && pin){ precacheFor(uid).finally(renderDash); } else { $('#identifyPanel').classList.remove('hidden'); }
 })();
-
-// --- Continue → check user ---
-async function handleContinue(){
-  const userId = (userIdEl?.value||'').trim();
-  if (!userId){ authMsg.textContent='Enter a User ID.'; return; }
-  authMsg.textContent = 'Checking…';
-
-  try{
-    const res = await fetch(API, {
-      method: 'POST',
-      body: new URLSearchParams({ action:'checkuser', userId, ts: Date.now() })
-    });
-    const data = await safeJson(res);
-    if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
-
-    if (data.exists){
-      localStorage.setItem('PREFETCH_USER', userId);
-      prefetchSubmissions(userId);
-      showPinStep(data.displayName || userId);
-    } else {
-      showRegisterStep();
-    }
-  }catch(e){
-    logErr('handleContinue', e);
-    authMsg.innerHTML = `<span class="err">Login setup failed: ${escapeHtml(String(e.message||e))}</span>`;
-  }
-}
-
-async function prefetchSubmissions(userId){
-  try{
-    const res = await fetch(API + '?action=getsubmissions&userId=' + encodeURIComponent(userId) + '&ts=' + Date.now());
-    const data = await safeJson(res);
-    if (data.ok){
-      sessionStorage.setItem('SUBMIT_CACHE_'+userId, JSON.stringify(data.submissions||[]));
-    }
-  }catch(e){ logErr('prefetchSubmissions', e); }
-}
-
-// --- Login / Register ---
-async function loginOrRegister(kind){
-  const userId = (userIdEl?.value||'').trim();
-  const pin = (kind==='register' ? (pinNewEl?.value||'') : (pinEl?.value||''));
-  if (!userId || !pin){ authMsg.textContent='Missing fields.'; return; }
-  authMsg.textContent='…';
-
-  const body = new URLSearchParams({ action: kind, userId, pin });
-  if (kind==='register'){
-    body.set('displayName', (displayNameEl?.value||userId).trim().slice(0,40));
-  } else {
-    body.set('displayName', userId);
-  }
-
-  try{
-    const res = await fetch(API, { method:'POST', body });
-    const data = await safeJson(res);
-    if (!data.ok){ authMsg.innerHTML = `<span class="err">Error: ${escapeHtml(data.error||'unknown')}</span>`; return; }
-
-    setUser({userId, pin});
-    uiUpdateAuth();
-
-    // Render cached activities immediately
-    const cached = readActivitiesCache();
-    renderActivities(cached ? cached.activities : [], new Set());
-
-    // Apply prefetched submissions (if any)
-    const pref = sessionStorage.getItem('SUBMIT_CACHE_'+userId);
-    if (pref){
-      const set = new Set(JSON.parse(pref).map(s=>s.activityId));
-      applySubmissionLocks(set);
-    }
-
-    // Normal refresh
-    await refreshAfterAuth(false);
-
-    authMsg.innerHTML = (kind==='register')
-      ? '<span class="ok">Registered!</span>'
-      : '<span class="ok">Logged in.</span>';
-
-  }catch(e){
-    logErr('loginOrRegister', e);
-    authMsg.innerHTML = `<span class="err">Network error: ${escapeHtml(String(e.message||e))}</span>`;
-  }
-}
-
-function logout(){ setUser(null); uiUpdateAuth(); }
-
-// --- Profile / Leaderboard ---
-async function loadProfile(){
-  const u = currentUser(); if(!u) return;
-  try{
-    const res = await fetch(API + '?action=getprofile&userId=' + encodeURIComponent(u.userId) + '&ts=' + Date.now());
-    const data = await safeJson(res);
-    if (data.ok){
-      if (balanceEl) balanceEl.textContent = data.balance;
-      if (greetingEl) greetingEl.textContent = `Hello, ${u.userId}`;
-    }
-  }catch(e){ logErr('loadProfile', e); }
-}
-async function loadLeaderboard(){
-  try{
-    const res = await fetch(API + '?action=leaderboard&ts=' + Date.now());
-    const data = await safeJson(res);
-    if (boardBody) boardBody.innerHTML = '';
-    if (data.ok && boardBody){
-      data.leaderboard.forEach((row,i)=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${i+1}</td><td>${escapeHtml(row.name)}</td><td>${row.score}</td>`;
-        boardBody.appendChild(tr);
-      });
-    }
-  }catch(e){ logErr('loadLeaderboard', e); }
-}
-
-// --- Submissions ---
-async function loadSubmittedSet(userId){
-  try{
-    const res = await fetch(API + '?action=getsubmissions&userId=' + encodeURIComponent(userId) + '&ts=' + Date.now());
-    const data = await safeJson(res);
-    if (data.ok){
-      return new Set(data.submissions.map(s => s.activityId));
-    }
-  }catch(e){ logErr('loadSubmittedSet', e); }
-  return new Set();
-}
-function applySubmissionLocks(submittedSet){
-  if (!(submittedSet instanceof Set) || !activitiesEl) return;
-  const tiles = activitiesEl.querySelectorAll('.tile');
-  tiles.forEach(tile => {
-    const id = tile.getAttribute('data-activity-id');
-    if (!id) return;
-    if (submittedSet.has(id)){
-      tile.classList.add('disabled');
-      tile.querySelector('textarea')?.setAttribute('disabled','');
-      const btn = tile.querySelector('button.submit');
-      if (btn){ btn.disabled = true; btn.textContent='Submitted'; }
-      const res = tile.querySelector('.result');
-      if (res && !res.textContent.trim()) res.textContent = 'You already submitted this activity.';
-    }
-  });
-}
-
-// --- Activities cache utils ---
-function readActivitiesCache(){
-  try{
-    const raw = localStorage.getItem(ACT_CACHE_KEY);
-    if (!raw) return null;
-    const o = JSON.parse(raw);
-    if (!o || !o.activities || !o.signature) return null;
-    if ((Date.now() - (o.ts || 0)) > ACT_CACHE_TTL_MS) return null;
-    return o;
-  }catch(e){ return null; }
-}
-function writeActivitiesCache(activities, signature){
-  const o = { ts: Date.now(), signature, activities };
-  localStorage.setItem(ACT_CACHE_KEY, JSON.stringify(o));
-}
-async function activitiesSignature(activities){
-  const key = activities.map(a => [a.activityId, a.title, a.prompt, a.points, a.openIso, a.closeIso]);
-  return await sha256Hex(JSON.stringify(key));
-}
-
-// --- Full refresh (parallel) ---
-async function refreshAfterAuth(forceSync=false){
-  const u = currentUser(); if(!u) return;
-
-  const headPromises = [ loadProfile(), loadLeaderboard(), loadGradingMap() ];
-
-  // Cache-first render if nothing visible
-  if (activitiesEl && !activitiesEl.childElementCount){
-    const cached = readActivitiesCache();
-    if (cached?.activities) renderActivities(cached.activities, new Set());
-  }
-
-  // Get submissions & activities in parallel
-  const subsPromise = loadSubmittedSet(u.userId).then(set => { applySubmissionLocks(set); return set; });
-
-  const cached = readActivitiesCache();
-  const needServer = forceSync || !cached;
-
-  beginBusy();
-  try{
-    const r = await fetch(API + '?action=getactivities&ts=' + Date.now());
-    const d = await safeJson(r);
-    if (d.ok){
-      const sig = await activitiesSignature(d.activities||[]);
-      if (!cached || sig !== cached.signature){
-        writeActivitiesCache(d.activities||[], sig);
-        renderActivities(d.activities||[], new Set());
-        const set = await subsPromise.catch(()=>new Set());
-        applySubmissionLocks(set);
-      } else if (needServer){
-        renderActivities(d.activities||[], new Set());
-        const set = await subsPromise.catch(()=>new Set());
-        applySubmissionLocks(set);
-      }
-    }
-  }catch(e){ logErr('refreshAfterAuth:getactivities', e); } finally { endBusy(); }
-
-  await Promise.allSettled(headPromises);
-}
-
-// --- Activities render + tile behavior ---
-function renderActivities(acts, submittedSet){
-  if (activitiesCard){
-    activitiesCard.hidden = false;
-    activitiesCard.style.removeProperty('display');
-    if (getComputedStyle(activitiesCard).display === 'none') activitiesCard.style.display = 'block';
-  }
-
-  if (!activitiesEl){
-    console.warn('[renderActivities] #activities not found. Check your HTML layout/IDs.');
-    return;
-  }
-
-  activitiesEl.innerHTML = '';
-  if (acts && acts.length){
-    acts.forEach(a => activitiesEl.appendChild(activityTile(a, submittedSet)));
-  } else {
-    activitiesEl.innerHTML = `
-      <div class="card muted" role="status" aria-live="polite">
-        No open activities right now. Check back soon!
-      </div>`;
-  }
-}
-
-function activityTile(a, submittedSet){
-  const alreadySubmitted = submittedSet.has(a.activityId);
-  const div = document.createElement('div');
-  div.className = 'card tile' + (alreadySubmitted ? ' disabled' : '');
-  div.setAttribute('data-activity-id', a.activityId || '');
-
-  div.innerHTML = `
-    <h3>${escapeHtml(a.title)}</h3>
-    <p class="muted">${escapeHtml(a.prompt || '')}</p>
-    <div class="row gap"><span class="badge">${a.points||0} 🪙</span></div>
-    <label>Your Answer
-      <textarea rows="2" class="answer" ${alreadySubmitted ? 'disabled' : ''}></textarea>
-    </label>
-    <button class="submit btn primary" ${alreadySubmitted ? 'disabled' : ''}>${alreadySubmitted ? 'Submitted' : 'Submit'}</button>
-    <p class="muted result">${alreadySubmitted ? 'You already submitted this activity.' : ''}</p>
-  `;
-
-  if (!alreadySubmitted){
-    const ans = div.querySelector('.answer');
-    const btn = div.querySelector('.submit');
-    const res = div.querySelector('.result');
-
-    btn.onclick = async () => {
-      const u = currentUser();
-      if (!u){ alert('Please login first.'); return; }
-      const answer = ans.value.trim();
-      if (!answer){ alert('Enter an answer.'); return; }
-
-      // Local instant grading cue
-      let displayedNeutral = false;
-      const h = GRADING.hashes[a.activityId];
-      if (GRADING.salt && h){
-        const userHash = await sha256Hex(GRADING.salt + normalizeAnswer(answer));
-        if (userHash === h) {
-          const awardGuess = (a.points || GRADING.points[a.activityId] || 0);
-          res.innerHTML = `<span class="ok">Correct! +${awardGuess} 🪙</span>`;
-          showStatus(div, 'ok', 'Correct!');
-        } else {
-          res.innerHTML = `<span class="err">Not quite. Checking…</span>`;
-          showStatus(div, 'err', 'Not quite');
-        }
-      } else {
-        displayedNeutral = true;
-        res.innerHTML = `<span class="muted">Submitting…</span>`;
-        showStatus(div, 'warn', 'Submitted');
-      }
-
-      // Busy lock
-      btn.disabled = true; ans.disabled = true; setTileBusy(div, true);
-
-      try{
-        const r = await fetch(API, { method:'POST', body: new URLSearchParams({
-          action:'submitAnswer', userId:u.userId, pin:u.pin, activityId:a.activityId, answer
-        })});
-        const d = await safeJson(r);
-
-        if (d.ok){
-          const award = Number(d.pointsAwarded||0);
-          if (d.correct === true){ res.innerHTML = `<span class="ok">Correct! +${award} 🪙</span>`; showStatus(div,'ok',`+${award} 🪙`); }
-          else if (d.correct === false){ res.innerHTML = `<span class="err">Not quite. Keep trying!</span>`; showStatus(div,'err','Not quite'); }
-          else { res.innerHTML = `<span class="muted">Submitted for review.</span>`; if (!displayedNeutral) showStatus(div,'warn','Submitted'); }
-
-          if (typeof d.newBalance === 'number') balanceEl.textContent = d.newBalance;
-          else loadProfile();
-
-          btn.disabled = true; ans.disabled = true; btn.textContent = 'Submitted';
-          div.classList.add('disabled'); loadLeaderboard();
-        } else {
-          if (d.error === 'already_submitted'){
-            res.innerHTML = '<span class="muted">Already submitted previously.</span>';
-            btn.disabled = true; ans.disabled = true; btn.textContent='Submitted';
-            div.classList.add('disabled'); showStatus(div,'warn','Already submitted');
-          } else {
-            res.innerHTML = `<span class="err">Error: ${escapeHtml(d.error)}</span>`;
-            btn.disabled = false; ans.disabled = false; btn.textContent='Submit';
-            setTileBusy(div,false); clearStatus(div); return;
-          }
-        }
-      }catch(e){
-        logErr('submitAnswer', e);
-        res.innerHTML = `<span class="err">Network error: ${escapeHtml(String(e.message||e))}</span>`;
-        btn.disabled = false; ans.disabled = false; btn.textContent='Submit';
-        setTileBusy(div,false); clearStatus(div); return;
-      }
-
-      setTileBusy(div,false);
-    };
-  }
-
-  return div;
-}
-
-// --- Status & busy helpers ---
-function showStatus(div, kind, text){
-  clearStatus(div);
-  const mask = document.createElement('div');
-  mask.className = 'status-mask ' + (kind==='ok' ? 'status-ok' : kind==='err' ? 'status-err' : 'status-warn');
-  mask.textContent = text || '';
-  div.style.position = 'relative';
-  div.appendChild(mask);
-}
-function clearStatus(div){ div.querySelector('.status-mask')?.remove(); }
-
-function setTileBusy(div, isBusy){
-  if (isBusy) {
-    if (!div.querySelector('.busy-mask')) {
-      const mask = document.createElement('div');
-      mask.className = 'busy-mask';
-      mask.innerHTML = '<div class="busy-spinner" aria-label="Working…"></div>';
-      div.style.position = 'relative';
-      div.appendChild(mask);
-    }
-    div.classList.add('busy'); div.setAttribute('aria-busy','true');
-  } else {
-    div.querySelector('.busy-mask')?.remove();
-    div.classList.remove('busy'); div.removeAttribute('aria-busy');
-  }
-}
-
-// --- Grading map ---
-async function loadGradingMap(){
-  try{
-    const res = await fetch(API + '?action=getgradingmap&ts=' + Date.now());
-    const data = await safeJson(res);
-    if (data.ok){
-      GRADING.salt = data.salt; GRADING.hashes = {}; GRADING.points = {};
-      (data.map||[]).forEach(({activityId, hash, points})=>{
-        if (activityId && hash){ GRADING.hashes[activityId]=hash; GRADING.points[activityId]=points||0; }
-      });
-    }
-  }catch(e){ logErr('loadGradingMap', e); }
-}
-
-// --- Initialize ---
-uiUpdateAuth();
-loadLeaderboard();
-setInterval(loadLeaderboard, 30000);
-
-if (currentUser()) {
-  const cached = readActivitiesCache();
-  if (cached?.activities) renderActivities(cached.activities, new Set());
-  refreshAfterAuth(false);
-}

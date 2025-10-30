@@ -3,96 +3,68 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Classroom Challenges</title>
-  <link rel="stylesheet" href="style.css?v=21">
+  <title>Classroom Challenge</title>
+  <link rel="stylesheet" href="style.css?v=cc2" />
 </head>
 <body>
-  <header class="site-header">
-    <h1>Classroom Challenges</h1>
+  <header class="app-bar">
+    <h1>Classroom Challenge</h1>
+    <div class="spacer"></div>
+    <label class="remember"><input type="checkbox" id="rememberPin"> Remember PIN on this device</label>
+    <button id="themeToggle" aria-label="Toggle theme">🌓</button>
   </header>
 
-  <main class="container">
-    <section id="auth" class="card">
-      <h2>Login / Register</h2>
-
-      <!-- Step 1: User ID -->
-      <div id="step-uid">
-        <label for="userId">User ID</label>
-        <input id="userId" type="text" placeholder="e.g., cjtownsend" autocomplete="username" />
-        <div class="row gap">
-          <button id="continueBtn" class="btn primary">Continue</button>
-        </div>
+  <main>
+    <!-- Step 1: Identify (precache happens here) -->
+    <section id="identifyPanel" class="card">
+      <h2>Welcome</h2>
+      <div class="row"><label>Student ID <input id="idOnly" autocomplete="username"></label></div>
+      <div class="actions">
+        <button id="idNextBtn">Next</button>
       </div>
-
-      <!-- Step 2: PIN for existing user -->
-      <div id="step-pin" hidden>
-        <p>Hello, <strong id="helloName"></strong>. Enter your PIN.</p>
-        <label for="pin">PIN</label>
-        <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" />
-        <div class="row gap">
-          <button id="loginBtn" class="btn primary">Login</button>
-          <button id="backToIdBtn" class="btn">Back</button>
-        </div>
-      </div>
-
-      <!-- Step 3: Registration -->
-      <div id="step-register" hidden>
-        <p>New here? Create your profile.</p>
-        <label for="displayName">Display name</label>
-        <input id="displayName" type="text" maxlength="40" placeholder="Your name" />
-        <label for="pinNew">Choose a PIN</label>
-        <input id="pinNew" type="password" inputmode="numeric" autocomplete="new-password" />
-        <div class="row gap">
-          <button id="registerBtn" class="btn success">Register</button>
-          <button id="backToIdBtn2" class="btn">Back</button>
-        </div>
-      </div>
-
-      <p id="authMsg" class="muted" role="status" aria-live="polite"></p>
+      <p id="idMsg" class="msg"></p>
+      <p id="precacheHint" class="muted hidden">Loading activities…</p>
     </section>
 
-    <section class="main-col">
-      <header id="profile" class="card row between center" hidden>
-        <div>
-          <div id="greeting" class="greeting">Hello</div>
-          <div class="muted">Balance: <span id="balance">0</span> 🪙</div>
-        </div>
-        <div class="row gap">
-          <button id="logoutBtn" class="btn">Logout</button>
-        </div>
-      </header>
+    <!-- Step 2: PIN -->
+    <section id="pinPanel" class="card hidden">
+      <h2 id="helloName">Hi!</h2>
+      <div class="row"><label>PIN <input id="pin" type="password" autocomplete="current-password"></label></div>
+      <div class="actions">
+        <button id="loginBtn">Login</button>
+        <button id="registerBtn" class="secondary">Register</button>
+      </div>
+      <p id="loginMsg" class="msg"></p>
+    </section>
 
-      <section id="activitiesCard" class="card" hidden>
-        <div class="row between center">
-          <h2>Activities</h2>
-          <button id="refreshBtn" class="btn icon" title="Refresh" aria-label="Refresh">⟳</button>
+    <!-- App -->
+    <section id="dashboard" class="hidden">
+      <div class="grid two">
+        <div class="card" id="profileCard">
+          <h2>Profile</h2>
+          <p><strong id="displayName">—</strong></p>
+          <p>Coins: <span id="coinBalance">0</span></p>
+          <button id="logoutBtn" class="secondary">Logout</button>
         </div>
-        <div id="activities" class="tiles"></div>
+        <div class="card" id="boardCard">
+          <h2>Leaderboard</h2>
+          <ol id="leaderboard"></ol>
+        </div>
+      </div>
+
+      <section class="card" id="activitiesCard">
+        <h2>Activities</h2>
+        <div id="activities" class="activities"></div>
       </section>
     </section>
-
-    <aside id="leaderboardCard" class="card">
-      <div class="row between center">
-        <h2>Leaderboard</h2>
-      </div>
-      <table class="table">
-        <thead>
-          <tr><th>#</th><th>Name</th><th>Score</th></tr>
-        </thead>
-        <tbody id="boardBody"></tbody>
-      </table>
-    </aside>
   </main>
 
-  <footer class="site-footer">
-    <small class="muted">© <span id="year"></span> Classroom Challenges</small>
-  </footer>
-
+  <footer class="footer">© <span id="year"></span> • Classroom Challenge</footer>
   <script>
-    // Simple year set
-    document.getElementById('year').textContent = new Date().getFullYear();
+    if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
   </script>
-  <script src="config.js?v=21"></script>
-  <script src="app.js?v=21"></script>
+  <!-- Load config BEFORE app.js so the URL persists across patches -->
+  <script src="config.js?v=1"></script>
+  <script src="app.js?v=cc2"></script>
 </body>
 </html>

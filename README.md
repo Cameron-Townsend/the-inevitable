@@ -1,58 +1,32 @@
-# Classroom Challenges — Deployable Package
+# Classroom Challenge — Instant-Feel Frontend (Compat with your Apps Script)
 
-This bundle contains a ready-to-deploy **frontend (GitHub Pages)** and **backend (Apps Script)** for your classroom challenge system with simple login/register, activities, instant client-side grading, and a leaderboard.
+This is the GitHub Pages frontend tailored to your existing backend. It features:
+- Two-step login (ID → PIN) that precaches activities/leaderboard/grading map.
+- Client pre-grading via salted SHA-256 hashes (`getgradingmap`).
+- Optimistic UI for instant feedback with server reconciliation.
+- Optional service worker for fast reloads.
+- External `config.js` so your Web App URL persists across `app.js` updates.
+
+## Quick Start
+1. Set your URL in `config.js`:
+   ```js
+   window.ClassroomConfig = {
+     WEB_APP_URL: 'https://script.google.com/macros/s/REPLACE_WITH_YOUR_DEPLOYED_ID/exec',
+     USE_SESSION_ONLY: true
+   };
+   ```
+2. Deploy these files to GitHub Pages.
+3. Visit the site → enter ID → enter PIN → enjoy the instant flow.
 
 ## Files
-- `index.html` — Landing page with login/register, Activities (shown after login), and Leaderboard
-- `style.css` — Light/Dark theme; flat, modern styles (no glow)
-- `config.js` — Put your Apps Script Web App `/exec` URL here
-- `app.js` — All frontend logic with caching, busy overlays, and client-side pregrading
-- `backend/code.gs` — Full Apps Script backend to paste into your project
+- `index.html` — layout and script loading (config.js before app.js)
+- `style.css` — responsive styling
+- `config.js` — persistent Web App URL + PIN storage mode
+- `app.js` — logic, precache, client pre-grading, optimistic UI
+- `sw.js` — caches static assets (no API caching)
+- `README.md` — this file
 
-## 1) Backend Setup (Apps Script)
-1. Create/choose a Google Sheet. Copy its **Sheet ID** (long string in the URL).
-2. In **Apps Script**, create a new project and paste the **contents of `backend/code.gs`**.
-3. Set `SPREADSHEET_ID` at the top of `code.gs`.
-4. **Deploy → New deployment → Web App**
-   - Execute as: **Me**
-   - Who has access: **Anyone**
-5. Copy the Web App URL (ends with `/exec`).
-
-### (Optional) Script property for salt
-- In **Project Settings → Script properties**, add `ANSWER_SALT` with any random string. If omitted, the script auto-generates one.
-
-## 2) Frontend Setup (GitHub Pages)
-1. Put `index.html`, `style.css`, `config.js`, `app.js` in your repo.
-2. Edit `config.js` and set `API` to your Web App `/exec` URL.
-3. Commit & push. Enable **GitHub Pages** on the repo (Settings → Pages).
-
-## 3) Sheets Structure
-The backend will **auto-create** these tabs and headers if missing:
-
-- **Users**: `userId, displayName, pinHash, createdAt`
-- **Activities**: `activityId, title, prompt, expectedAnswer, points, openIso, closeIso`
-- **Submissions**: `timestamp, userId, activityId, answer, correct, pointsAwarded`
-- **Ledger**: `timestamp, userId, amount, reason, activityId`
-
-Add some starter activities in the **Activities** sheet (leave `openIso/closeIso` blank initially or use ISO datetimes).
-
-## 4) Caching & Performance
-- **Pre-caches** activities for faster initial load.
-- Uses **URL-encoded POST** to avoid CORS preflights for critical endpoints.
-- Instant **client-side pre-grading** via salted hashes from `getgradingmap`.
-- **Busy overlays** on tiles and a subtle spinner on **Refresh**.
-
-## 5) Common Gotchas
-- After any Apps Script change: **Deploy → Manage deployments → Edit → Deploy** again.
-- If frontend changes don’t show: bump versions (e.g., `app.js?v=2`) and hard refresh (Ctrl/Cmd+Shift+R).
-- If “Network error” on login step: confirm Web App “Who has access” = **Anyone**, and test:
-  - `.../exec?action=ping`
-  - `.../exec?action=checkuser&userId=test`
-  - `.../exec?action=getactivities`
-
-## 6) Privacy & Security
-- PINs are stored as **SHA‑256 hashes** in the Sheet.
-- Answers are hidden client-side via salted hash comparison (obfuscation, not real security).
-- No sensitive PII is stored beyond userId/displayName.
-
-Enjoy, and ping me if you want a **storefront**, **achievements**, or **profile** tab added later!
+## Notes
+- The frontend uses your Sheets tabs: Users, Activities, Submissions, Ledger.
+- All protected calls send `{ userId, pin }` per your backend (no tokens).
+- `USE_SESSION_ONLY: true` keeps PIN ephemeral by default; users can still choose to persist PIN if you set it to `false` and they check “Remember PIN.”
