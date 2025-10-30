@@ -1,4 +1,4 @@
-// Classroom Challenge — app v16 (tile-based toasts)
+// Classroom Challenge — app v17 (centered tile toast, no tile spinner, slide tile to end while processing)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
@@ -209,7 +209,7 @@ async function onPrimaryAuth(){
   }
 }
 
-// Submit (tile-level busy + shimmer verdict + tile toast)
+// Submit (centered tile toast, no tile spinner, move tile to end while processing)
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
 function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
 function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
@@ -220,9 +220,12 @@ async function onSubmit(ev){
   const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ const t=tileEl(id); showTileToast(t,'Enter an answer','info'); return; }
   const btn=ev.currentTarget; const tile=tileEl(id); if(!tile) return;
 
-  removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked');
+  // Lock, dim (no spinner), and move tile to end
+  removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked','moving');
+  tile.style.order = '999';
   if(inp) inp.disabled=true; btn.disabled=true;
 
+  // Client-side quick verdict
   let verdict='neutral', points=0;
   try{
     const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
@@ -233,9 +236,11 @@ async function onSubmit(ev){
     }
   }catch{}
 
+  // Shimmer verdict (no spinner)
   const SWITCH_MS = 150;
   setTimeout(()=>{ removeClasses(tile,'processing'); addClasses(tile, verdict); }, SWITCH_MS);
 
+  // Tile toast feedback
   if(verdict==='success'){
     const bal = Number($('#coinBalance')?.textContent||0) + points;
     $('#coinBalance') && ($('#coinBalance').textContent = bal);
@@ -243,6 +248,7 @@ async function onSubmit(ev){
   } else if(verdict==='fail'){ showTileToast(tile, '❌ Not quite — recorded.', 'bad'); }
   else { showTileToast(tile, 'ℹ️ Submitted.', 'info'); }
 
+  // Submit to server while shimmer runs
   const SHIMMER_TOTAL = 700 + 600;
   setTimeout(()=> addClasses(tile,'done'), SHIMMER_TOTAL);
 
@@ -257,9 +263,15 @@ async function onSubmit(ev){
     cache.archive.unshift({ activityId:id, title: act.title || id, points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0), correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)), answer, correctAnswer: act.correctAnswer || null, timestamp: new Date().toISOString() });
     saveArchive(); renderArchive();
 
-    setTimeout(()=>{ tile.style.transform='scale(0.98)'; tile.style.opacity='0.0'; setTimeout(()=> tile.remove(), 260); }, SHIMMER_TOTAL + 120);
+    // Fade away after shimmer
+    setTimeout(()=>{
+      tile.style.transform='scale(0.98)';
+      tile.style.opacity='0.0';
+      setTimeout(()=> tile.remove(), 260);
+    }, SHIMMER_TOTAL + 120);
   } catch(e){
-    removeClasses(tile,'processing','success','fail','neutral','done','locked');
+    removeClasses(tile,'processing','success','fail','neutral','done','locked','moving');
+    tile.style.order = '';
     if(inp) inp.disabled=false; btn.disabled=false; showTileToast(tile, e.message || 'Error', 'bad');
   }
 }

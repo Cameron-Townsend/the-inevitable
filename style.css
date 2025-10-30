@@ -83,6 +83,7 @@ body[data-state="app"] #dashboard{ display:block; }
 }
 .activities{
   display:grid;
+  grid-auto-flow: row dense;
   grid-template-columns: repeat(auto-fit, minmax(var(--tile-min), var(--tile-max)));
   gap:var(--s2);
   justify-content:start;
@@ -101,13 +102,11 @@ body[data-state="app"] #dashboard{ display:block; }
 .activity.locked{ pointer-events:none; }
 .activity.done{ opacity:.6; filter:grayscale(.25) brightness(.95); }
 
-/* ===== Per-tile processing overlay + shimmer verdict ===== */
+/* ===== Per-tile processing overlay (spinner removed) + shimmer verdict ===== */
 .activity::before, .activity::after{ position:absolute; content:''; pointer-events:none; }
 .activity::before{ display:none; }
-.activity.processing::before{ display:block; inset:0; background:rgba(10,12,22,.45); }
-.activity.processing::after{ width:28px; height:28px; top:50%; left:50%;
-  transform:translate(-50%, -50%); border:3px solid rgba(255,255,255,.35);
-  border-top-color: var(--accent); border-radius:50%; animation:spin 700ms linear infinite; }
+.activity.processing::before{ display:block; inset:0; background:rgba(10,12,22,.35); }
+/* spinner removed: .activity.processing::after intentionally not used */
 
 .activity.success::before, .activity.fail::before, .activity.neutral::before{ display:block; inset:0; opacity:0; animation-fill-mode:forwards; }
 .activity.success::before{ animation: verdictGreen 700ms ease, fadeGray 600ms ease 700ms forwards; }
@@ -119,23 +118,33 @@ body[data-state="app"] #dashboard{ display:block; }
 @keyframes verdictYellow700{0%{opacity:0;background:rgba(255,204,102,0);} 35%{opacity:1;background:rgba(255,204,102,.45);} 70%{background:rgba(255,204,102,.32);} 100%{opacity:1;background:rgba(255,204,102,.26);} }
 @keyframes fadeGray{ to{ background:rgba(128,128,128,.18); } }
 
-/* ===== Tile Toast (local bubble) ===== */
+/* ===== Tile Toast (centered overlay) ===== */
 .tile-toast{
   position:absolute;
-  top:-32px; left:50%; transform:translateX(-50%);
+  top:50%; left:50%;
+  transform:translate(-50%, -50%);
   background:rgba(0,0,0,.85); color:#fff;
-  padding:6px 10px; border-radius:8px; font-size:.9rem; pointer-events:none;
+  padding:8px 12px; border-radius:10px; font-size:.95rem; pointer-events:none;
   opacity:0; white-space:nowrap; z-index:40; animation:tileToast 2s ease forwards;
   box-shadow:var(--shadow);
 }
 .tile-toast.good{ background:rgba(67,209,122,.9); }
 .tile-toast.bad{ background:rgba(255,107,107,.9); }
-.tile-toast.info{ background:rgba(255,204,102,.9); color:#1a1a1a; }
+.tile-toast.info{ background:rgba(255,204,102,.95); color:#1a1a1a; }
 @keyframes tileToast{
-  0%{ opacity:0; transform:translate(-50%,10px); }
-  10%{ opacity:1; transform:translate(-50%,0); }
+  0%{ opacity:0; transform:translate(-50%,-40%); }
+  10%{ opacity:1; transform:translate(-50%,-50%); }
   90%{ opacity:1; }
-  100%{ opacity:0; transform:translate(-50%,-10px); }
+  100%{ opacity:0; transform:translate(-50%,-60%); }
+}
+
+/* ===== Slide-to-end animation when processing ===== */
+.activity.moving{
+  animation: slideToEnd 250ms ease;
+}
+@keyframes slideToEnd{
+  from{ transform:translateX(0); opacity:1; }
+  to{ transform:translateX(6px); opacity:.98; }
 }
 
 /* ===== Archive ===== */
