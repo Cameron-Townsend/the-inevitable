@@ -1,4 +1,4 @@
-// Classroom Challenge — app v17 (centered tile toast, no tile spinner, slide tile to end while processing)
+// Classroom Challenge — app v19 (hide completed tiles across reload; archive only)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
@@ -57,9 +57,11 @@ function showAuthPin(){ setState('auth-pin'); }
 function showApp(){ setState('app'); }
 
 // Cache
-const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login', archive:[] };
+const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login', archive:[] , hideCompleted:true};
 function loadArchive(){ try{ cache.archive = JSON.parse(localStorage.getItem(K.arch)||'[]'); }catch{ cache.archive=[]; } }
 function saveArchive(){ try{ localStorage.setItem(K.arch, JSON.stringify(cache.archive)); }catch{} }
+function loadDoneFromStorage(){ try{ const arr = JSON.parse(localStorage.getItem(K.subs)||'[]'); cache.done = new Set(arr); }catch{ cache.done = new Set(); } }
+function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
 
 // Renderers
 function renderProfile(p){ $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId); $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0); }
@@ -73,17 +75,19 @@ function renderLeaderboardPreview(rows){
 }
 function renderActivities(list, doneSet){
   const wrap=$('#activities'); if(!wrap) return; wrap.innerHTML='';
+  const hide = cache.hideCompleted !== false;
   (list||[]).forEach(a=>{
-    const done = doneSet.has(a.activityId);
+    const isDone = doneSet.has(a.activityId);
+    if (hide && isDone) return; // do not render completed tiles
     const div=document.createElement('div');
-    div.className='activity'+(done?' done locked':'');
+    div.className='activity'+(isDone?' done locked':'');
     div.setAttribute('data-tile', a.activityId);
     div.innerHTML=`<h3>🧠 ${a.title}</h3>
       <p>${a.prompt||''}</p>
       <p>Worth <strong>🪙 ${a.points}</strong></p>
       <div class="row stack">
-        <input placeholder="Your answer" id="ans-${a.activityId}" ${done?'disabled':''}>
-        <button data-id="${a.activityId}" ${done?'disabled':''}>Submit</button>
+        <input placeholder="Your answer" id="ans-${a.activityId}" ${isDone?'disabled':''}>
+        <button data-id="${a.activityId}" ${isDone?'disabled':''}>Submit</button>
       </div>`;
     wrap.appendChild(div);
   });
@@ -141,13 +145,21 @@ async function precacheFor(uid){
   if(acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{} }
   if(lb.ok){   cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb)); }catch{} renderLeaderboardPreview(cache.lb); }
   if(gm.ok){   cache.gm   = gm; try{ localStorage.setItem(K.gm,   JSON.stringify(gm)); }catch{} }
-  if(subs.ok){ cache.done = new Set((subs.submissions||[]).map(s=>s.activityId)); try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
+  if(subs.ok){
+    cache.done = new Set((subs.submissions||[]).map(s=>s.activityId));
+    try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{}
+  } else {
+    // Fallback to previously stored done set
+    loadDoneFromStorage();
+  }
   if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
   loadArchive(); renderArchive();
 }
 
 function renderDash(){
   showApp();
+  // Ensure done set is loaded even if offline
+  if (!cache.done || cache.done.size===0) loadDoneFromStorage();
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
@@ -209,7 +221,7 @@ async function onPrimaryAuth(){
   }
 }
 
-// Submit (centered tile toast, no tile spinner, move tile to end while processing)
+// Submit (hide-on-reload: add to done set immediately)
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
 function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
 function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
@@ -220,9 +232,11 @@ async function onSubmit(ev){
   const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ const t=tileEl(id); showTileToast(t,'Enter an answer','info'); return; }
   const btn=ev.currentTarget; const tile=tileEl(id); if(!tile) return;
 
-  // Lock, dim (no spinner), and move tile to end
-  removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked','moving');
-  tile.style.order = '999';
+  // Immediately record this tile as completed client-side to hide on future reloads
+  cache.done.add(id); persistDone();
+
+  // Lock + dim (no spinner), keep tile for toast, then slide to end later
+  removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked');
   if(inp) inp.disabled=true; btn.disabled=true;
 
   // Client-side quick verdict
@@ -236,11 +250,12 @@ async function onSubmit(ev){
     }
   }catch{}
 
-  // Shimmer verdict (no spinner)
+  // Shimmer verdict
   const SWITCH_MS = 150;
   setTimeout(()=>{ removeClasses(tile,'processing'); addClasses(tile, verdict); }, SWITCH_MS);
 
-  // Tile toast feedback
+  // Toast (2s), then move to end
+  const TOAST_MS = 2000;
   if(verdict==='success'){
     const bal = Number($('#coinBalance')?.textContent||0) + points;
     $('#coinBalance') && ($('#coinBalance').textContent = bal);
@@ -248,7 +263,9 @@ async function onSubmit(ev){
   } else if(verdict==='fail'){ showTileToast(tile, '❌ Not quite — recorded.', 'bad'); }
   else { showTileToast(tile, 'ℹ️ Submitted.', 'info'); }
 
-  // Submit to server while shimmer runs
+  setTimeout(()=>{ addClasses(tile,'moving'); tile.style.order='999'; }, TOAST_MS);
+
+  // Submit to server
   const SHIMMER_TOTAL = 700 + 600;
   setTimeout(()=> addClasses(tile,'done'), SHIMMER_TOTAL);
 
@@ -263,13 +280,15 @@ async function onSubmit(ev){
     cache.archive.unshift({ activityId:id, title: act.title || id, points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0), correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)), answer, correctAnswer: act.correctAnswer || null, timestamp: new Date().toISOString() });
     saveArchive(); renderArchive();
 
-    // Fade away after shimmer
     setTimeout(()=>{
       tile.style.transform='scale(0.98)';
       tile.style.opacity='0.0';
       setTimeout(()=> tile.remove(), 260);
-    }, SHIMMER_TOTAL + 120);
+    }, SHIMMER_TOTAL + 400);
   } catch(e){
+    // If server failed, revert done state so tile can be retried after reload
+    cache.done.delete(id); persistDone();
+
     removeClasses(tile,'processing','success','fail','neutral','done','locked','moving');
     tile.style.order = '';
     if(inp) inp.disabled=false; btn.disabled=false; showTileToast(tile, e.message || 'Error', 'bad');
@@ -302,9 +321,13 @@ async function boot(){
   const build=$('#build'); if(build) build.textContent=(window.ASSET_VERSION||'dev');
   const theme = localStorage.getItem('cc.theme'); document.documentElement.classList.toggle('light', theme==='light');
   const tt = $('#themeToggle'); if(tt){ tt.onclick = ()=>{ const light = !document.documentElement.classList.contains('light'); document.documentElement.classList.toggle('light', light); localStorage.setItem('cc.theme', light?'light':'dark'); }; }
+
+  // Load preview and local caches early
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
-  const uid=store.uid(), pin=store.pin();
+  loadDoneFromStorage(); // ensure we know completed IDs before first render
   loadArchive(); renderArchive();
+
+  const uid=store.uid(), pin=store.pin();
   if(uid && pin){
     Busy.show('Loading your dashboard…');
     try{
