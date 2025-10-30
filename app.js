@@ -1,84 +1,209 @@
-// Auth-only Busy overlay controller (v13)
-const Busy = (()=>{
-  let count = 0, timer = null;
-  const el = () => document.querySelector('#busyOverlay');
+// Classroom Challenge — app v14 (auth fixes + busy overlay)
+const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
+if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
+
+const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities', subs:'cc.subs', lb:'cc.lb', gm:'cc.grading', arch:'cc.archive' };
+
+const $  = (s,root=document)=> root.querySelector(s);
+const $$ = (s,root=document)=> Array.from(root.querySelectorAll(s));
+
+// Busy (auth-only)
+const Busy = (()=> {
+  let count=0, timer=null;
+  const el = () => $('#busyOverlay');
   function show(text){
-    const e = el(); if(!e) return;
-    if(text) { const t=e.querySelector('.busy-text'); if(t) t.textContent=text; }
-    count = Math.max(0, count) + 1;
+    const e=el(); if(!e) return;
+    if(text){ const t=e.querySelector('.busy-text'); if(t) t.textContent=text; }
+    count = Math.max(0,count)+1;
     e.classList.remove('hidden');
-    // Failsafe: auto-hide after 10s in case of network aborts
     clearTimeout(timer);
-    timer = setTimeout(()=>{ count=0; e.classList.add('hidden'); }, 10000);
+    timer = setTimeout(()=>{ count=0; e.classList.add('hidden'); timer=null; }, 10000);
   }
   function hide(){
-    const e = el(); if(!e) return;
+    const e=el(); if(!e) return;
     count = Math.max(0, count-1);
     if(count===0){ e.classList.add('hidden'); clearTimeout(timer); timer=null; }
   }
-  function reset(){ count=0; const e=el(); if(e) e.classList.add('hidden'); clearTimeout(timer); timer=null; }
-  return { show, hide, reset };
+  return { show, hide };
 })();
 
-// Wire Busy into auth-only flows
-(function(){
-  const origFetch = window.fetch;
-  // No global fetch wrapping; we call Busy explicitly only in auth handlers.
-  // This ensures activity tile operations never trigger the full-screen overlay.
-})();
+// Storage
+const store = {
+  set(uid, pin, remember){
+    localStorage.setItem(K.uid, uid);
+    (remember ? localStorage : sessionStorage).setItem(K.pin, pin);
+    if(!remember) localStorage.removeItem(K.pin);
+  },
+  clear(){
+    localStorage.removeItem(K.uid);
+    localStorage.removeItem(K.pin);
+    sessionStorage.removeItem(K.pin);
+    localStorage.removeItem(K.arch);
+  },
+  uid(){ return localStorage.getItem(K.uid); },
+  pin(){ return sessionStorage.getItem(K.pin) || localStorage.getItem(K.pin); }
+};
 
-// Replace the following helper usages in your app.js:
-// - In goToPin(): wrap network work with Busy.show()/Busy.hide()
-// - In onPrimaryAuth(): same
-// - In boot(): only show when resuming a session
-//
-// Example replacements:
+// Net
+const jget  = p    => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method:'GET'  }).then(r=>r.json());
+const jpost = body => fetch(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:new URLSearchParams(body) }).then(r=>r.json());
 
+// State/UI helpers
+function setState(s){
+  document.body.setAttribute('data-state', s);
+  const tt = $('#themeToggle');
+  if (tt) tt.classList.toggle('hidden', s==='app');
+}
+const setMsg = (sel, m) => { const el=$(sel); if(el) el.textContent = m||''; };
+const norm = s => (s||'').toString().trim().toLowerCase();
+async function sha256Hex(str){ const enc=new TextEncoder(); const buf=await crypto.subtle.digest('SHA-256', enc.encode(str)); return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join(''); }
+function showAuthId(){ setState('auth-id'); }
+function showAuthPin(){ setState('auth-pin'); }
+function showApp(){ setState('app'); }
+
+// Cache
+const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login', archive:[] };
+function loadArchive(){ try{ cache.archive = JSON.parse(localStorage.getItem(K.arch)||'[]'); }catch{ cache.archive=[]; } }
+function saveArchive(){ try{ localStorage.setItem(K.arch, JSON.stringify(cache.archive)); }catch{} }
+
+// Renderers
+function renderProfile(p){ $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId); $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0); }
+function renderLeaderboard(rows){
+  const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
+  (rows||[]).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — 🪙 ${r.score}`; ol.appendChild(li); });
+}
+function renderLeaderboardPreview(rows){
+  const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
+  (rows||[]).slice(0,8).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — ${r.score}`; ol.appendChild(li); });
+}
+function renderActivities(list, doneSet){
+  const wrap=$('#activities'); if(!wrap) return; wrap.innerHTML='';
+  (list||[]).forEach(a=>{
+    const done = doneSet.has(a.activityId);
+    const div=document.createElement('div');
+    div.className='activity'+(done?' done locked':'');
+    div.setAttribute('data-tile', a.activityId);
+    div.innerHTML=`<h3>🧠 ${a.title}</h3>
+      <p>${a.prompt||''}</p>
+      <p>Worth <strong>🪙 ${a.points}</strong></p>
+      <div class="row stack">
+        <input placeholder="Your answer" id="ans-${a.activityId}" ${done?'disabled':''}>
+        <button data-id="${a.activityId}" ${done?'disabled':''}>Submit</button>
+      </div>`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit, { passive:true }));
+}
+function renderArchive(){
+  const ul = $('#archiveList'); if(!ul) return; ul.innerHTML='';
+  if(!cache.archive.length){ ul.innerHTML = '<li class="muted">No previous activities yet.</li>'; return; }
+  cache.archive.forEach(item=>{
+    const li=document.createElement('li'); li.className='archive-item'; li.dataset.id=item.activityId; li.setAttribute('aria-expanded','false');
+    const pill = item.correct===true?'good':item.correct===false?'bad':'neutral';
+    li.innerHTML = `<div class="hdr">
+        <div>
+          <strong>${item.title||item.activityId}</strong>
+          <div class="meta">${new Date(item.timestamp).toLocaleString()} • <span class="pill ${pill}">${item.correct===true?'Correct ✅':item.correct===false?'Incorrect ❌':'Submitted ℹ️'}</span> • 🪙 ${item.points||0}</div>
+        </div>
+        <button class="secondary small toggle-detail">Details</button>
+      </div>
+      <div class="detail">
+        <div><strong>Your answer:</strong></div>
+        <div class="answer">${(item.answer||'—').replace(/[<>&]/g,s=>({ '<':'&lt;','>':'&gt;','&':'&amp;' }[s]))}</div>
+        <div class="correct">${item.correctAnswer ? `<strong>Correct answer:</strong> ${item.correctAnswer}` : '<em>Correct answer hidden</em>'}</div>
+      </div>`;
+    ul.appendChild(li);
+  });
+  ul.querySelectorAll('.toggle-detail').forEach(btn=> btn.addEventListener('click', e=>{
+    const li = e.currentTarget.closest('.archive-item'); const open = li.getAttribute('aria-expanded')==='true';
+    li.setAttribute('aria-expanded', open?'false':'true');
+  }));
+}
+function renderArchiveChip(){
+  const chipbar = $('#archiveChip'); if(!chipbar) return; chipbar.innerHTML='';
+  const recent = (cache.archive||[]).slice(0,5);
+  if(!recent.length){ chipbar.classList.add('hidden'); return; }
+  chipbar.classList.remove('hidden');
+  recent.forEach(item=>{
+    const cls = item.correct===true?'good':item.correct===false?'bad':'neutral';
+    const emoji = item.correct===true?'✅':item.correct===false?'❌':'ℹ️';
+    const div=document.createElement('div'); div.className='chip '+cls; div.dataset.id=item.activityId;
+    div.innerHTML = `<span class="e">${emoji}</span><span class="title">${item.title||item.activityId}</span>`;
+    chipbar.appendChild(div);
+  });
+}
+
+// Data fetching
+async function precacheFor(uid){
+  const [acts, lb, gm, subs, prof] = await Promise.all([
+    jget({action:'getactivities'}),
+    jget({action:'leaderboard'}),
+    jget({action:'getgradingmap'}),
+    uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
+    uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0})
+  ]);
+  if(acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{} }
+  if(lb.ok){   cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb)); }catch{} renderLeaderboardPreview(cache.lb); }
+  if(gm.ok){   cache.gm   = gm; try{ localStorage.setItem(K.gm,   JSON.stringify(gm)); }catch{} }
+  if(subs.ok){ cache.done = new Set((subs.submissions||[]).map(s=>s.activityId)); try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
+  if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
+  loadArchive(); renderArchive(); renderArchiveChip();
+}
+
+function renderDash(){
+  showApp();
+  renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
+  renderLeaderboard(cache.lb||[]);
+  renderActivities(cache.acts||[], cache.done||new Set());
+  renderArchive(); renderArchiveChip();
+  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
+}
+
+// Auth flow
 async function goToPin(mode){
   cache.authMode = mode;
-  const uid = document.querySelector('#idOnly')?.value.trim(); if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
+  const uid = $('#idOnly')?.value.trim();
+  if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
   setMsg('#idMsg',''); localStorage.setItem(K.uid, uid);
   showAuthPin();
-  const primaryBtn = document.querySelector('#primaryAuthBtn'); if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
+  const primaryBtn = $('#primaryAuthBtn'); if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
   try{
     Busy.show('Checking ID…');
-    if(!cache.lb){
-      const lb = await jget({action:'leaderboard'});
-      if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); }
-    }
+    if(!cache.lb){ const lb = await jget({action:'leaderboard'}); if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); } }
     const check = await jget({action:'checkuser', userId:uid});
     const exists = check.ok && check.exists;
     const name = exists ? (check.displayName||uid) : uid;
-    document.querySelector('#helloName').textContent = (mode==='login')
-      ? (exists?`Welcome back, ${name}!`:`Not registered yet — let's create your account, ${name}.`)
-      : `Create your account, ${name}`;
-    if(mode==='login' && !exists){ cache.authMode = 'register'; if(primaryBtn) primaryBtn.textContent='Register'; }
+    const hello = $('#helloName');
+    if(hello){
+      hello.textContent = (mode==='login')
+        ? (exists ? `Welcome back, ${name}!` : `Not registered yet — let's create your account, ${name}.`)
+        : `Create your account, ${name}`;
+    }
+    if(mode==='login' && !exists){ cache.authMode='register'; if(primaryBtn) primaryBtn.textContent='Register'; }
     precacheFor(uid).catch(()=>{});
-  }catch(e){
+  } catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
-  } finally {
-    Busy.hide();
-  }
+  } finally { Busy.hide(); }
 }
 
 async function onPrimaryAuth(){
-  const uid = store.uid() || document.querySelector('#idOnly')?.value.trim();
-  const pin = document.querySelector('#pin')?.value.trim();
-  const remember=document.querySelector('#rememberPin')?.checked && !USE_SESSION_ONLY;
-  if(!uid||!pin){ setMsg('#loginMsg','Enter PIN'); return; }
-  const button = document.querySelector('#primaryAuthBtn'); if(button) button.setAttribute('disabled','');
+  const uid = store.uid() || $('#idOnly')?.value.trim();
+  const pin = $('#pin')?.value.trim();
+  const remember = $('#rememberPin')?.checked && !USE_SESSION_ONLY;
+  if(!uid || !pin){ setMsg('#loginMsg','Enter PIN'); return; }
+  const button=$('#primaryAuthBtn'); if(button) button.setAttribute('disabled','');
   Busy.show(cache.authMode==='register' ? 'Creating account…' : 'Signing in…');
   try{
     if(cache.authMode==='register'){
-      const res= await jpost({ action:'register', userId:uid, pin, displayName:uid });
-      if(!res.ok){ throw new Error(res.error||'Register failed'); }
+      const r=await jpost({ action:'register', userId:uid, pin, displayName:uid });
+      if(!r.ok) throw new Error(r.error||'Register failed');
     }
-    const res= await jpost({ action:'login', userId:uid, pin });
-    if(!res.ok){ throw new Error(res.error||'Login failed'); }
+    const lg=await jpost({ action:'login', userId:uid, pin });
+    if(!lg.ok) throw new Error(lg.error||'Login failed');
     store.set(uid, pin, remember); setMsg('#loginMsg','');
     await precacheFor(uid);
     cache.profile = cache.profile || { userId:uid, balance:0 };
-    cache.profile.displayName = res.displayName || cache.profile.displayName || uid;
+    cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
     renderDash();
   } catch(e){
     setMsg('#loginMsg', e.message||'Auth error');
@@ -88,16 +213,108 @@ async function onPrimaryAuth(){
   }
 }
 
-(async function boot(){
-  const uid = store.uid(); const pin = store.pin();
+// Submit
+function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
+function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
+function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
+let toastTimer=null;
+function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
+
+async function onSubmit(ev){
+  const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin();
+  if(!uid||!pin){ showToast('Please log in again.','bad'); return; }
+  const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ showToast('Enter an answer','bad'); return; }
+  const btn=ev.currentTarget; const tile=tileEl(id); if(!tile) return;
+
+  removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked');
+  if(inp) inp.disabled=true; btn.disabled=true;
+
+  let verdict='neutral', points=0;
+  try{
+    const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
+    const entry = gm?.map?.find(m => m.activityId === id);
+    if(entry && entry.hash){
+      const h = await sha256Hex(gm.salt + norm(answer));
+      if(h === entry.hash){ verdict='success'; points=Number(entry.points||0); } else { verdict='fail'; }
+    }
+  }catch{}
+
+  setTimeout(()=>{ removeClasses(tile,'processing'); addClasses(tile, verdict); }, 150);
+
+  if(verdict==='success'){
+    const bal = Number($('#coinBalance')?.textContent||0) + points;
+    $('#coinBalance') && ($('#coinBalance').textContent = bal);
+    showToast(`✅ Correct! +🪙 ${points}`,'good');
+  } else if(verdict==='fail'){ showToast('❌ Not quite — recorded.','bad'); }
+  else { showToast('ℹ️ Submitted.',''); }
+
+  const SHIMMER_MS = 900 + 700;
+  setTimeout(()=> addClasses(tile,'done'), SHIMMER_MS);
+
+  try{
+    const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
+    if(!res.ok) throw new Error(res.error||'Submit failed');
+    const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok && $('#coinBalance')) $('#coinBalance').textContent = prof.balance;
+    const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
+
+    const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
+    cache.archive = cache.archive.filter(x => x.activityId !== id);
+    cache.archive.unshift({ activityId:id, title: act.title || id, points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0), correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)), answer, correctAnswer: act.correctAnswer || null, timestamp: new Date().toISOString() });
+    saveArchive(); renderArchive(); renderArchiveChip();
+
+    setTimeout(()=>{ tile.style.transform='scale(0.98)'; tile.style.opacity='0.0'; setTimeout(()=> tile.remove(), 260); }, SHIMMER_MS + 150);
+  } catch(e){
+    removeClasses(tile,'processing','success','fail','neutral','done','locked');
+    if(inp) inp.disabled=false; btn.disabled=false; showToast(e.message,'bad');
+  }
+}
+
+// Events
+function wireEvents(){
+  const on = (sel, fn) => { const el=$(sel); if(el){ el.addEventListener('click', fn, { passive:true }); return true; } return false; };
+  on('#idLoginBtn',     ()=>goToPin('login'));
+  on('#idRegisterBtn',  ()=>goToPin('register'));
+  on('#primaryAuthBtn', onPrimaryAuth);
+  on('#backToIdBtn',    showAuthId);
+  on('#logoutBtn',      ()=>{ store.clear(); location.reload(); });
+  const archBtn = $('#archiveToggle');
+  if(archBtn){
+    archBtn.addEventListener('click', ()=>{
+      const p = $('#archivePanel'); const open = !p.hasAttribute('hidden');
+      if(open){ p.setAttribute('hidden',''); archBtn.setAttribute('aria-expanded','false'); }
+      else { p.removeAttribute('hidden'); archBtn.setAttribute('aria-expanded','true'); }
+    }, { passive:true });
+  }
+  const chip = $('#archiveChip');
+  if(chip){
+    chip.addEventListener('click', ()=>{
+      const p = $('#archivePanel'), btn = $('#archiveToggle');
+      if(p.hasAttribute('hidden')){ p.removeAttribute('hidden'); btn && btn.setAttribute('aria-expanded','true'); }
+      p.scrollIntoView({behavior:'smooth', block:'start'});
+    }, { passive:true });
+  }
+}
+
+// Boot
+async function boot(){
+  if(!document.body.getAttribute('data-state')) setState('auth-id');
+  wireEvents();
+  const y=$('#year'); if(y) y.textContent=new Date().getFullYear();
+  const build=$('#build'); if(build) build.textContent=(window.ASSET_VERSION||'dev');
+  const theme = localStorage.getItem('cc.theme'); document.documentElement.classList.toggle('light', theme==='light');
+  const tt = $('#themeToggle'); if(tt){ tt.onclick = ()=>{ const light = !document.documentElement.classList.contains('light'); document.documentElement.classList.toggle('light', light); localStorage.setItem('cc.theme', light?'light':'dark'); }; }
+  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
+  const uid=store.uid(), pin=store.pin();
   loadArchive(); renderArchive(); renderArchiveChip();
   if(uid && pin){
     Busy.show('Loading your dashboard…');
     try{
       await precacheFor(uid);
       renderDash();
-    } finally {
-      Busy.hide();
-    }
+    } finally { Busy.hide(); }
   }
-})();
+}
+
+document.readyState === 'loading'
+  ? document.addEventListener('DOMContentLoaded', boot, { once:true })
+  : boot();
