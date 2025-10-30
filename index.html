@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Classroom Challenge</title>
-  <link rel="stylesheet" href="style.css?v=cc3" />
+  <link rel="stylesheet" href="style.css?v=uc1" />
 </head>
 <body>
   <!-- Theme toggle appears only on auth screens -->
@@ -15,8 +15,8 @@
     <section id="authLayout" class="grid two auth-layout">
       <!-- Step 1: Username with Login/Register choices -->
       <section id="identifyPanel" class="card">
-        <h2>Welcome</h2>
-        <div class="row"><label>Student ID <input id="idOnly" autocomplete="username"></label></div>
+        <h2>Welcome ✨</h2>
+        <div class="row"><label>Student ID <input id="idOnly" autocomplete="username" placeholder="e.g., s12345"></label></div>
         <div class="actions">
           <button id="idLoginBtn">Login</button>
           <button id="idRegisterBtn" class="secondary">Register</button>
@@ -27,16 +27,16 @@
 
       <!-- Right: non-invasive leaderboard preview -->
       <aside id="lbPreview" class="card lb-preview">
-        <h3>Leaderboard</h3>
+        <h3>Leaderboard Preview 🏆</h3>
         <ol id="leaderboardPreview" class="tight"></ol>
       </aside>
     </section>
 
     <!-- Step 2: PIN (single column) -->
     <section id="pinPanel" class="card hidden">
-      <h2 id="helloName">Hi!</h2>
+      <h2 id="helloName">Hi! 👋</h2>
       <div class="row pin-row">
-        <label>PIN <input id="pin" type="password" autocomplete="current-password"></label>
+        <label>PIN <input id="pin" type="password" autocomplete="current-password" placeholder="4–8 digits"></label>
         <label class="remember small"><input type="checkbox" id="rememberPin"> Remember PIN</label>
       </div>
       <div class="actions">
@@ -50,19 +50,19 @@
     <section id="dashboard" class="hidden">
       <div class="grid two">
         <div class="card" id="profileCard">
-          <h2>Profile</h2>
+          <h2>Profile 👤</h2>
           <p><strong id="displayName">—</strong></p>
-          <p>Coins: <span id="coinBalance">0</span></p>
+          <p>Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
           <button id="logoutBtn" class="secondary">Logout</button>
         </div>
         <div class="card" id="boardCard">
-          <h2>Leaderboard</h2>
+          <h2>Leaderboard 🏆</h2>
           <ol id="leaderboard"></ol>
         </div>
       </div>
 
       <section class="card" id="activitiesCard">
-        <h2>Activities</h2>
+        <h2>Activities 🧩</h2>
         <div id="activities" class="activities"></div>
       </section>
     </section>
@@ -77,6 +77,6 @@
   </script>
   <!-- Load config BEFORE app.js so the URL persists across patches -->
   <script src="config.js?v=1"></script>
-  <script src="app.js?v=cc3"></script>
+  <script src="app.js?v=uc1"></script>
 </body>
 </html>

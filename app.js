@@ -28,7 +28,7 @@ const setMsg = (id, m)=>{ $(id).textContent = m||''; };
 
 // Toasts
 let toastTimer=null;
-function showToast(msg, kind=''){ const t=$('#toast'); t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2500); }
+function showToast(msg, kind=''){ const t=$('#toast'); t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
 // Crypto helpers for client pre‑grading
 const norm = s => (s||'').toString().trim().toLowerCase();
@@ -41,10 +41,56 @@ async function sha256Hex(str){
 // Cached state
 const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login' /* or 'register' */ };
 
-function renderProfile(p){ $('#displayName').textContent = p.displayName||p.userId; $('#coinBalance').textContent = p.balance??0; }
-function renderLeaderboard(rows){ const ol=$('#leaderboard'); ol.innerHTML=''; (rows||[]).forEach(r=>{ const li=document.createElement('li'); li.textContent=`${r.name} — ${r.score} coins`; ol.appendChild(li); }); }
-function renderLeaderboardPreview(rows){ const ol=$('#leaderboardPreview'); ol.innerHTML=''; (rows||[]).slice(0,8).forEach(r=>{ const li=document.createElement('li'); li.textContent=`${r.name} — ${r.score}`; ol.appendChild(li); }); }
-function renderActivities(list, doneSet){ const wrap=$('#activities'); wrap.innerHTML=''; (list||[]).forEach(a=>{ const done = doneSet.has(a.activityId); const div=document.createElement('div'); div.className='activity'+(done?' done':''); div.innerHTML=`<h3>${a.title}</h3><p>${a.prompt||''}</p><p>Worth ${a.points} coins</p><div class="row"><input placeholder="Your answer" id="ans-${a.activityId}" ${done?'disabled':''}><button data-id="${a.activityId}" ${done?'disabled':''}>Submit</button></div>`; wrap.appendChild(div); }); wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit)); }
+function renderProfile(p){
+  $('#displayName').textContent = p.displayName||p.userId;
+  $('#coinBalance').textContent = p.balance??0;
+}
+function renderLeaderboard(rows){
+  const ol=$('#leaderboard'); ol.innerHTML='';
+  (rows||[]).forEach((r,i)=>{
+    const li=document.createElement('li');
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    li.textContent=`${medal} ${r.name} — 🪙 ${r.score}`;
+    ol.appendChild(li);
+  });
+}
+function renderLeaderboardPreview(rows){
+  const ol=$('#leaderboardPreview'); ol.innerHTML='';
+  (rows||[]).slice(0,8).forEach((r,i)=>{
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    const li=document.createElement('li');
+    li.textContent=`${medal} ${r.name} — ${r.score}`;
+    ol.appendChild(li);
+  });
+}
+function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`) }
+function setTileState(id, state){ // state: 'processing' | 'success' | 'fail' | 'neutral' | ''
+  const el = tileEl(id); if(!el) return;
+  el.classList.remove('processing','success','fail','neutral');
+  if(state){ el.classList.add(state); }
+  // lock interaction during visual states
+  if(state==='processing' || state==='success' || state==='fail' || state==='neutral'){ el.classList.add('locked'); }
+  else { el.classList.remove('locked'); }
+}
+function renderActivities(list, doneSet){
+  const wrap=$('#activities'); wrap.innerHTML='';
+  (list||[]).forEach(a=>{
+    const done = doneSet.has(a.activityId);
+    const div=document.createElement('div');
+    div.className='activity'+(done?' done locked':'');
+    div.setAttribute('data-tile', a.activityId);
+    const icon = '🧠';
+    div.innerHTML=`<h3>${icon} ${a.title}</h3>
+      <p>${a.prompt||''}</p>
+      <p>Worth <strong>🪙 ${a.points}</strong></p>
+      <div class="row">
+        <input placeholder="Your answer" id="ans-${a.activityId}" ${done?'disabled':''}>
+        <button data-id="${a.activityId}" ${done?'disabled':''}>Submit</button>
+      </div>`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit));
+}
 
 async function precacheFor(uid){
   $('#precacheHint').classList.remove('hidden');
@@ -63,12 +109,14 @@ async function precacheFor(uid){
   $('#precacheHint').classList.add('hidden');
 }
 
+// View helpers
 function showAuth(){ $('#authLayout').classList.remove('hidden'); $('#pinPanel').classList.add('hidden'); $('#dashboard').classList.add('hidden'); $('#themeToggle').classList.remove('hidden'); }
 function showPin(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.remove('hidden'); $('#dashboard').classList.add('hidden'); $('#themeToggle').classList.remove('hidden'); }
 function showApp(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.add('hidden'); $('#dashboard').classList.remove('hidden'); $('#themeToggle').classList.add('hidden'); }
+function hideAuthPanels(){ $('#authLayout').classList.add('hidden'); $('#pinPanel').classList.add('hidden'); $('#themeToggle').classList.add('hidden'); }
 
 function renderDash(){
-  showApp();
+  hideAuthPanels();
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
@@ -113,7 +161,7 @@ async function onPrimaryAuth(){
   try{
     $('#primaryAuthBtn').disabled = true;
     if(cache.authMode==='register'){
-      const displayName = uid; // using uid as default display name; could prompt if needed
+      const displayName = uid; // default display name
       const res= await jpost({ action:'register', userId:uid, pin, displayName });
       if(!res.ok){ throw new Error(res.error||'Register failed'); }
       showToast('Registered! Logging you in…','good');
@@ -121,38 +169,73 @@ async function onPrimaryAuth(){
     const res= await jpost({ action:'login', userId:uid, pin });
     if(!res.ok){ throw new Error(res.error||'Login failed'); }
     store.set(uid, pin, remember); setMsg('#loginMsg','');
+
+    // Ensure caches (activities etc.) then render
     if(!cache.acts) await precacheFor(uid);
-    const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:res.displayName||uid }; }
+
+    // Update profile with server-confirmed balance/name
+    const prof = await jget({action:'getprofile', userId:uid});
+    if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:res.displayName||uid }; }
+
+    hideAuthPanels();
     renderDash();
   } catch(e){ setMsg('#loginMsg', e.message); }
   finally{ $('#primaryAuthBtn').disabled = false; }
 }
 
-// Submit with inline toasts
+// Submit with inline toasts and overlays
 async function onSubmit(ev){
   const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin(); if(!uid||!pin){ showToast('Please log in again.','bad'); return; }
   const inp=$('#ans-'+id); const answer=(inp.value||'').trim(); if(!answer){ showToast('Enter an answer','bad'); return; }
-  let instantCorrect = null; let points=0;
+
+  const tile = tileEl(id);
+  // Lock and show busy overlay
+  setTileState(id, 'processing');
+  inp.disabled=true; ev.currentTarget.disabled=true;
+
+  // Client pre‑grade (still show busy during hashing)
+  let instantCorrect = null; let points=0; let hasKey=false;
   try{
     const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
     const entry = gm?.map?.find(m => m.activityId === id);
     if(entry && entry.hash){
+      hasKey = true;
       const h = await sha256Hex(gm.salt + norm(answer));
       if(h === entry.hash){ instantCorrect = true; points = Number(entry.points||0); }
     }
   }catch{}
-  if(instantCorrect){ cache.done.add(id); inp.disabled=true; ev.currentTarget.disabled=true; const bal = Number($('#coinBalance').textContent||0) + points; $('#coinBalance').textContent = bal; showToast(`Correct! +${points} coins`,'good'); }
+
   try{
     const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
     if(!res.ok){ throw new Error(res.error||'Submit failed'); }
-    if(res.correct){ cache.done.add(id); inp.disabled=true; ev.currentTarget.disabled=true; if(!instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; showToast(`Correct! +${res.pointsAwarded} coins`,'good'); }
-    } else {
-      if(instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; cache.done.delete(id); inp.disabled=false; ev.currentTarget.disabled=false; }
-      showToast('Not quite—try again later.','');
+
+    // Decide final state
+    if(res.correct === true){
+      setTileState(id, 'success');
+      cache.done.add(id);
+      // Optimistic coin bump if needed
+      if(!instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; }
+      else { const bal = Number($('#coinBalance').textContent||0) + points; $('#coinBalance').textContent = bal; }
+      showToast(`✅ Correct! +🪙 ${res.pointsAwarded||points}`,'good');
+      // Mark done & keep disabled
+      tile.classList.add('done','locked');
+    } else if(res.correct === false){
+      setTileState(id, 'fail');
+      showToast('❌ Not quite — try again later.','bad');
+      // Re-enable after glow ends
+      setTimeout(()=>{ setTileState(id, ''); inp.disabled=false; ev.currentTarget.disabled=false; }, 900);
+    } else { // null (no right/wrong)
+      setTileState(id, 'neutral');
+      showToast('ℹ️ Submission received.','');
+      tile.classList.add('done','locked');
     }
+
+    // Refresh leaderboard
     const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
   } catch(e){
-    if(instantCorrect){ const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok) $('#coinBalance').textContent = prof.balance; cache.done.delete(id); inp.disabled=false; ev.currentTarget.disabled=false; }
+    // Roll back UI on error
+    setTileState(id, '');
+    inp.disabled=false; ev.currentTarget.disabled=false;
     showToast(e.message,'bad');
   }
 }
@@ -186,7 +269,7 @@ $('#themeToggle').addEventListener('click', ()=>{
   const uid = store.uid(); const pin = store.pin();
   if(uid && pin){
     // Returning user goes straight to app
-    precacheFor(uid).finally(renderDash);
+    precacheFor(uid).finally(()=>{ renderDash(); });
   } else {
     // Show auth, theme toggle visible
     showAuth();
