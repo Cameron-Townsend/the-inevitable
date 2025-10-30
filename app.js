@@ -1,3 +1,21 @@
+
+// Render dashboard pieces from cache safely
+function hydrateDashFromCache(){
+  try {
+    if (cache && cache.profile) { renderProfile(cache.profile); try{ bindProfileAvatarFromPayload && bindProfileAvatarFromPayload(cache.profile); }catch(e){} }
+    if (cache && cache.lb)      { renderLeaderboard(cache.lb); }
+    if (cache && cache.acts)    { 
+      try {
+        // Prefer existing renderActivities signature if available
+        if (typeof renderActivities === 'function') {
+          var done = (cache.done instanceof Set) ? cache.done : new Set(Array.isArray(cache.done) ? cache.done : []);
+          renderActivities(cache.acts, done);
+        }
+      } catch(e){}
+    }
+  } catch(e){ console.warn('[hydrateDashFromCache] warning:', e); }
+}
+
 function setProfileAvatar(url){ const img=document.getElementById('profile-avatar'); if(img) img.src = url || 'avatars/happy-face.png'; }
 function updateVisibleLeaderboardAvatar(userId,url){ document.querySelectorAll('img.avatar-chip[data-user="'+userId+'"]').forEach(img=>img.src=url); }
 // Classroom Challenge — app v19 (hide completed tiles across reload; archive only)
@@ -192,7 +210,7 @@ async function goToPin(mode){
         : `Create your account, ${name}`;
     }
     if(mode==='login' && !exists){ cache.authMode='register'; if(primaryBtn) primaryBtn.textContent='Register'; }
-    precacheFor(uid).catch(()=>{});
+    precacheFor(uid).then(function(){ hydrateDashFromCache(); }).catch(function(){ hydrateDashFromCache(); }).catch(()=>{});
   } catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
   } finally { Busy.hide(); }
