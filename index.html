@@ -4,35 +4,44 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Classroom Challenge</title>
-  <link rel="stylesheet" href="style.css?v=cc2" />
+  <link rel="stylesheet" href="style.css?v=cc3" />
 </head>
 <body>
-  <header class="app-bar">
-    <h1>Classroom Challenge</h1>
-    <div class="spacer"></div>
-    <label class="remember"><input type="checkbox" id="rememberPin"> Remember PIN on this device</label>
-    <button id="themeToggle" aria-label="Toggle theme">🌓</button>
-  </header>
+  <!-- Theme toggle appears only on auth screens -->
+  <button id="themeToggle" class="theme-toggle hidden" aria-label="Toggle theme">🌓</button>
 
   <main>
-    <!-- Step 1: Identify (precache happens here) -->
-    <section id="identifyPanel" class="card">
-      <h2>Welcome</h2>
-      <div class="row"><label>Student ID <input id="idOnly" autocomplete="username"></label></div>
-      <div class="actions">
-        <button id="idNextBtn">Next</button>
-      </div>
-      <p id="idMsg" class="msg"></p>
-      <p id="precacheHint" class="muted hidden">Loading activities…</p>
+    <!-- Auth Layout: two columns on step 1 -->
+    <section id="authLayout" class="grid two auth-layout">
+      <!-- Step 1: Username with Login/Register choices -->
+      <section id="identifyPanel" class="card">
+        <h2>Welcome</h2>
+        <div class="row"><label>Student ID <input id="idOnly" autocomplete="username"></label></div>
+        <div class="actions">
+          <button id="idLoginBtn">Login</button>
+          <button id="idRegisterBtn" class="secondary">Register</button>
+        </div>
+        <p id="idMsg" class="msg"></p>
+        <p id="precacheHint" class="muted hidden">Loading activities…</p>
+      </section>
+
+      <!-- Right: non-invasive leaderboard preview -->
+      <aside id="lbPreview" class="card lb-preview">
+        <h3>Leaderboard</h3>
+        <ol id="leaderboardPreview" class="tight"></ol>
+      </aside>
     </section>
 
-    <!-- Step 2: PIN -->
+    <!-- Step 2: PIN (single column) -->
     <section id="pinPanel" class="card hidden">
       <h2 id="helloName">Hi!</h2>
-      <div class="row"><label>PIN <input id="pin" type="password" autocomplete="current-password"></label></div>
+      <div class="row pin-row">
+        <label>PIN <input id="pin" type="password" autocomplete="current-password"></label>
+        <label class="remember small"><input type="checkbox" id="rememberPin"> Remember PIN</label>
+      </div>
       <div class="actions">
-        <button id="loginBtn">Login</button>
-        <button id="registerBtn" class="secondary">Register</button>
+        <button id="primaryAuthBtn">Login</button>
+        <button id="backToIdBtn" class="secondary">Back</button>
       </div>
       <p id="loginMsg" class="msg"></p>
     </section>
@@ -59,12 +68,15 @@
     </section>
   </main>
 
+  <!-- Toasts / inline notifications -->
+  <div id="toast" class="toast hidden"></div>
+
   <footer class="footer">© <span id="year"></span> • Classroom Challenge</footer>
   <script>
     if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
   </script>
   <!-- Load config BEFORE app.js so the URL persists across patches -->
   <script src="config.js?v=1"></script>
-  <script src="app.js?v=cc2"></script>
+  <script src="app.js?v=cc3"></script>
 </body>
 </html>

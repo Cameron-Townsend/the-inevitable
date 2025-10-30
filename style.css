@@ -1,10 +1,7 @@
-:root{ --bg:#0f1216; --text:#e7e9ec; --card:#151a20; --muted:#9aa3ad; --accent:#7cc5ff; --good:#43d17a; --warn:#ffcc66; }
-:root.light{ --bg:#f7f9fb; --text:#0e1116; --card:#ffffff; --muted:#596273; --accent:#0d84ff; --good:#1a9f57; --warn:#b67200; }
+:root{ --bg:#0f1216; --text:#e7e9ec; --card:#151a20; --muted:#9aa3ad; --accent:#7cc5ff; --good:#43d17a; --warn:#ffcc66; --bad:#ff6b6b; }
+:root.light{ --bg:#f7f9fb; --text:#0e1116; --card:#ffffff; --muted:#596273; --accent:#0d84ff; --good:#1a9f57; --warn:#b67200; --bad:#c0392b; }
 *{ box-sizing:border-box; } html,body{ height:100%; }
 body{ margin:0; font:16px/1.5 system-ui,Segoe UI,Roboto,Arial; background:var(--bg); color:var(--text); }
-.app-bar{ display:flex; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid #00000022; position:sticky; top:0; backdrop-filter:saturate(1.2) blur(6px); background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,0)); }
-.app-bar .spacer{ flex:1; }
-.remember{ font-size:.9rem; color:var(--muted); display:flex; align-items:center; gap:6px; }
 main{ max-width:960px; margin:24px auto; padding:0 16px; }
 .card{ background:var(--card); border:1px solid #00000022; border-radius:12px; padding:16px; box-shadow:0 2px 10px #00000033; }
 .grid.two{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
@@ -18,7 +15,26 @@ button:disabled{ opacity:.6; cursor:not-allowed; }
 .msg{ min-height:1.25em; color:var(--warn); }
 .hidden{ display:none; }
 .muted{ color:var(--muted); }
+.small{ font-size:0.9rem; color:var(--muted); }
 .activities{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
 .activity{ padding:12px; border:1px solid #00000033; border-radius:10px; background:#00000011; }
 .activity.done{ opacity:.6; }
 .footer{ text-align:center; opacity:.6; padding:24px; }
+
+/* Auth layout */
+.auth-layout{ align-items:start; }
+.lb-preview .tight{ margin:0; padding-left:20px; }
+.lb-preview li{ padding:2px 0; opacity:.9; }
+
+/* Theme toggle button (only on auth screens) */
+.theme-toggle{ position:fixed; right:12px; top:12px; z-index:1000; background:var(--card); color:var(--text); border:1px solid #00000033; box-shadow:0 2px 8px #00000033; border-radius:10px; }
+.theme-toggle.hidden{ display:none; }
+
+/* PIN row with remember checkbox inline */
+.pin-row{ align-items:end; gap:16px; }
+.pin-row label.remember{ flex-direction:row; align-items:center; gap:8px; margin-left:auto; }
+
+/* Toasts */
+.toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:var(--card); color:var(--text); border:1px solid #00000033; box-shadow:0 4px 16px #00000055; padding:12px 16px; border-radius:10px; z-index:1001; max-width:90%; }
+.toast.good{ border-color: rgba(0,255,140,.4); }
+.toast.bad{ border-color: rgba(255,0,0,.4); }
