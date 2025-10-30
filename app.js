@@ -1,3 +1,13 @@
+
+// === Avatar helpers (v19.1) ===
+function setProfileAvatar(url){
+  var img = document.getElementById('profile-avatar');
+  if (img) img.src = url || 'avatars/happy-face.png';
+}
+function updateVisibleLeaderboardAvatar(userId, url){
+  document.querySelectorAll('img.avatar-chip[data-user="'+userId+'"]').forEach(function(img){ img.src = url; });
+}
+
 // Classroom Challenge — app v19 (hide completed tiles across reload; archive only)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
@@ -340,3 +350,87 @@ async function boot(){
 document.readyState === 'loading'
   ? document.addEventListener('DOMContentLoaded', boot, { once:true })
   : boot();
+
+
+function bindProfileAvatarFromPayload(payload){
+  if (!payload) return;
+  if (payload.avatarURL) { try { setProfileAvatar(payload.avatarURL); } catch(_){} }
+  // Mount picker if available
+  var mount = document.getElementById('avatar-picker');
+  if (mount && window.AvatarPicker && payload.userId){
+    var picker = window.AvatarPicker({
+      apiBase: ClassroomConfig.WEB_APP_URL,
+      user: { userId: payload.userId, avatarId: payload.avatarId||'', avatarURL: payload.avatarURL||'' },
+      onChanged: function(url, id){
+        if (window.showToast) showToast('Avatar updated!');
+        setProfileAvatar(url);
+        try {
+          var cached = JSON.parse(localStorage.getItem('cc.profile') || '{}');
+          cached.avatarId = id; cached.avatarURL = url;
+          localStorage.setItem('cc.profile', JSON.stringify(cached));
+        } catch(e){}
+        updateVisibleLeaderboardAvatar(payload.userId, url);
+      }
+    });
+    picker.mount(mount);
+  }
+}
+
+
+// Lightweight fetch interceptor to bind avatar when getprofile is requested
+(function(){
+  var _fetch = window.fetch;
+  window.fetch = function(input, init){
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    var isProfile = url.indexOf('action=getprofile') !== -1;
+    return _fetch(input, init).then(function(res){
+      if (isProfile){
+        try {
+          // Clone to read once
+          return res.clone().json().then(function(json){
+            if (json && json.ok) bindProfileAvatarFromPayload(json);
+            return res;
+          });
+        } catch(e){ return res; }
+      }
+      return res;
+    });
+  };
+})();
+
+
+// Decorate leaderboard entries with avatar chips if backend provides avatar URLs
+(function(){
+  var lb = document.getElementById('leaderboard');
+  if (!lb) return;
+  var decorate = function(){
+    // If rows already contain avatar-chip, skip
+    if (lb.querySelector('img.avatar-chip')) return;
+    // Try to fetch the leaderboard dataset and re-render minimally
+    try {
+      var url = new URL(ClassroomConfig.WEB_APP_URL);
+      url.searchParams.set('action','leaderboard');
+      fetch(url.toString()).then(function(r){ return r.json(); }).then(function(j){
+        if (!j || !j.ok || !Array.isArray(j.leaderboard)) return;
+        // Build simple list
+        lb.innerHTML='';
+        j.leaderboard.forEach(function(r){
+          var li = document.createElement('li');
+          var img = document.createElement('img');
+          img.className='avatar-chip';
+          img.alt=(r.name||r.userId)+' avatar';
+          img.src = r.avatarURL || 'avatars/happy-face.png';
+          img.setAttribute('data-user', r.userId);
+          var span = document.createElement('span');
+          span.textContent = ' ' + (r.name||r.userId) + ' — ' + r.score;
+          li.appendChild(img); li.appendChild(span);
+          lb.appendChild(li);
+        });
+      });
+    } catch(e){}
+  };
+  // Try decorate after DOM ready and whenever list mutates
+  if (document.readyState !== 'loading') decorate();
+  else document.addEventListener('DOMContentLoaded', decorate);
+  new MutationObserver(function(){ decorate(); }).observe(lb, { childList:true });
+})();
