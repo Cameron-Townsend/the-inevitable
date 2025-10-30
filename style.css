@@ -46,7 +46,20 @@ button:disabled{ opacity:.6; cursor:not-allowed; }
 .msg{ min-height:1.25em; color:var(--warn); margin-top:var(--s1); }
 .hidden{ display:none; } .muted{ color:var(--muted); } .small{ font-size:0.92rem; color:var(--muted); }
 
-/* ===== Section head + chipbar mobile friendly ===== */
+/* ===== State visibility (FIX) ===== */
+#identifyPanel, #pinPanel, #authLayout, #dashboard{ display:none; }
+body[data-state="auth-id"] #authLayout{ display:grid; }
+body[data-state="auth-id"] #identifyPanel{ display:block; }
+body[data-state="auth-id"] #pinPanel{ display:none; }
+
+body[data-state="auth-pin"] #authLayout{ display:grid; }
+body[data-state="auth-pin"] #identifyPanel{ display:none; }
+body[data-state="auth-pin"] #pinPanel{ display:block; }
+
+body[data-state="app"] #authLayout{ display:none; }
+body[data-state="app"] #dashboard{ display:block; }
+
+/* ===== Section head + chipbar ===== */
 .section-head{ display:flex; align-items:center; gap:var(--s2); justify-content:space-between; flex-wrap:wrap; }
 .chipbar{
   display:flex; gap:8px; align-items:center;
@@ -66,11 +79,11 @@ button:disabled{ opacity:.6; cursor:not-allowed; }
   .chipbar{ width:100%; min-width:0; }
 }
 
-/* ===== Activities Grid: stable widths and col cap ===== */
+/* ===== Activities Grid (stable widths / capped cols) ===== */
 #activities{
   --tile-min: 280px;
   --tile-max: 360px;
-  max-width: calc(3 * var(--tile-max) + 2 * var(--s2)); /* cap to 3 columns at most */
+  max-width: calc(3 * var(--tile-max) + 2 * var(--s2)); /* 3 columns max */
   margin-inline:auto;
 }
 .activities{
