@@ -1,9 +1,24 @@
 
 // ---- Safe Dashboard Hydration (guarded) ----
+// Safe Dashboard Hydration (guarded) — v19.2.0
 function hydrateDashFromCache(){
   try {
     if (cache && cache.profile) {
       try { if (typeof renderProfile === 'function') renderProfile(cache.profile); } catch(e){}
+      try { if (typeof bindProfileAvatarFromPayload === 'function') bindProfileAvatarFromPayload(cache.profile); } catch(e){}
+    }
+    if (cache && cache.lb) {
+      try { if (typeof renderLeaderboard === 'function') renderLeaderboard(cache.lb); } catch(e){}
+    }
+    if (cache && cache.acts) {
+      try {
+        var done = (cache.done instanceof Set) ? cache.done :
+                   new Set(Array.isArray(cache.done) ? cache.done : []);
+        if (typeof renderActivities === 'function') renderActivities(cache.acts, done);
+      } catch(e){}
+    }
+  } catch(e){ console.warn('[hydrateDashFromCache] warning:', e); }
+}
       try { if (typeof bindProfileAvatarFromPayload === 'function') bindProfileAvatarFromPayload(cache.profile); } catch(e){}
     }
     if (cache && cache.lb) {
@@ -174,16 +189,28 @@ let toastTimer=null;
 function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
 // Data fetching
-async function precacheFor(uid){
-  const avatarsP = jget({ action: 'getavatars' }).catch,
-      onChanged: function(url, id){
-        if (window.showToast) showToast('Avatar updated!');
-        setProfileAvatar(url);
-        try{
-          var cached = JSON.parse(localStorage.getItem(K.prof) || '{}');
-          cached.avatarId = id; cached.avatarURL = url;
-          localStorage.setItem(K.prof, JSON.stringify(cached));
-        }catch{}
+async // Clean Promise-based precacheFor (v19.2.0)
+function precacheFor(uid){
+  const avatarsP = jget({ action: 'getavatars' }).catch(function(){ return { ok:false }; });
+
+  return Promise.all([
+    jget({ action: 'getactivities' }),
+    jget({ action: 'leaderboard' }),
+    jget({ action: 'getgradingmap' }),
+    uid ? jget({ action: 'getsubmissions', userId: uid }) : Promise.resolve({ ok:true, submissions: [] }),
+    uid ? jget({ action: 'getprofile',    userId: uid }) : Promise.resolve({ ok:true, userId: uid, balance: 0 })
+  ]).then(function([acts, lb, gm, subs, prof]){
+    if (acts && acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch(e){} }
+    if (lb && lb.ok){     cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb));   }catch(e){} }
+    if (gm && gm.ok){     cache.gm   = { salt: gm.salt, map: gm.map }; try{ localStorage.setItem(K.gm, JSON.stringify(cache.gm)); }catch(e){} }
+    if (subs && subs.ok){ cache.done = new Set((subs.submissions||[]).map(function(s){ return s.activityId; })); try{ localStorage.setItem(K.subs, JSON.stringify(Array.from(cache.done))); }catch(e){} }
+    if (prof && prof.ok){ cache.profile = prof; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch(e){} }
+    return avatarsP;
+  }).then(function(av){
+    if (av && av.ok){ cache.avatars = av.avatars; try{ localStorage.setItem('cc.avatars', JSON.stringify(cache.avatars)); }catch(e){} }
+    return true;
+  }).catch(function(){ return true; });
+}
         updateVisibleLeaderboardAvatar(profile.userId, url);
       }
     });
@@ -203,3 +230,15 @@ try {
     setTimeout(function(){ try { hydrateDashFromCache(); } catch(e){} }, 0);
   }
 } catch(e) {}
+
+// scheduleHydration_once_v192
+try {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function once(){
+      document.removeEventListener('DOMContentLoaded', once);
+      try { hydrateDashFromCache(); } catch(e){}
+    });
+  } else {
+    setTimeout(function(){ try { hydrateDashFromCache(); } catch(e){} }, 0);
+  }
+} catch(e){}
