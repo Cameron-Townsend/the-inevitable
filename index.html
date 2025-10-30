@@ -2,9 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Classroom Challenge</title>
-  <link rel="stylesheet" href="style.css?v=uc2" />
+
+  <!-- Bump this version whenever you deploy -->
+  <script>
+    window.ASSET_VERSION = '2025-10-29.3';
+  </script>
+
+  <!-- Versioned CSS (cache-busting) -->
+  <link rel="stylesheet" href="style.css?v=uc3" />
 </head>
 <body>
   <!-- Theme toggle appears only on auth screens -->
@@ -16,7 +26,11 @@
       <!-- Step 1: Username with Login/Register choices -->
       <section id="identifyPanel" class="card">
         <h2>Welcome ✨</h2>
-        <div class="row"><label>Student ID <input id="idOnly" autocomplete="username" placeholder="e.g., s12345"></label></div>
+        <div class="row">
+          <label>Student ID
+            <input id="idOnly" autocomplete="username" placeholder="e.g., s12345">
+          </label>
+        </div>
         <div class="actions">
           <button id="idLoginBtn">Login</button>
           <button id="idRegisterBtn" class="secondary">Register</button>
@@ -36,7 +50,9 @@
     <section id="pinPanel" class="card hidden">
       <h2 id="helloName">Hi! 👋</h2>
       <div class="row pin-row">
-        <label>PIN <input id="pin" type="password" autocomplete="current-password" placeholder="4–8 digits"></label>
+        <label>PIN
+          <input id="pin" type="password" autocomplete="current-password" placeholder="4–8 digits">
+        </label>
         <label class="remember small"><input type="checkbox" id="rememberPin"> Remember PIN</label>
       </div>
       <div class="actions">
@@ -72,11 +88,39 @@
   <div id="toast" class="toast hidden"></div>
 
   <footer class="footer">© <span id="year"></span> • Classroom Challenge</footer>
+
+  <!-- Service Worker handling with purge + versioned registration -->
   <script>
-    if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js'); }
+    (async () => {
+      try {
+        // 1) Unregister any old service workers
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) { await r.unregister(); }
+        }
+
+        // 2) Clear all caches (this wipes old sw caches too)
+        if (window.caches && caches.keys) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+      } catch (e) {
+        console.warn('Cache/SW purge warning:', e);
+      } finally {
+        // 3) Re-register the SW with a versioned URL (so it fetches fresh)
+        if ('serviceWorker' in navigator) {
+          try {
+            await navigator.serviceWorker.register('./sw.js?v=' + encodeURIComponent(window.ASSET_VERSION));
+          } catch (e) {
+            console.warn('SW register failed (continuing without SW):', e);
+          }
+        }
+      }
+    })();
   </script>
-  <!-- Load config BEFORE app.js so the URL persists across patches -->
+
+  <!-- Load config BEFORE app.js so the URL persists across patches (versioned) -->
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=uc2"></script>
+  <script src="app.js?v=uc3"></script>
 </body>
 </html>
