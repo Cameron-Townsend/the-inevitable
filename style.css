@@ -11,11 +11,21 @@
   --good:#1aa163; --warn:#b67200; --bad:#c0392b; --shadow:0 8px 24px rgba(0,0,0,.08);
 }
 *{ box-sizing:border-box; } html,body{ height:100%; }
-body{ margin:0; font:16px/1.5 system-ui,Segoe UI,Roboto,Arial; background:radial-gradient(1200px 800px at 20% -10%, rgba(127,90,240,.15), transparent), var(--bg); color:var(--text); }
-main{ max-width:1000px; margin:var(--s4) auto; padding:0 var(--s2); }
-.card{ background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.08)), var(--card); border:1px solid rgba(255,255,255,.06); border-radius:var(--r); padding:var(--s3); box-shadow:var(--shadow); }
+body{ margin:0; font:16px/1.5 system-ui,Segoe UI,Roboto,Arial; color:var(--text); background:var(--bg); }
+body::before{ content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(1200px 800px at 20% -10%, rgba(127,90,240,.15), transparent),
+    var(--bg);
+} /* static gradient: fixed layer */
+main{ max-width:1100px; margin:var(--s4) auto; padding:0 var(--s2); }
+.cardless{} /* utility: no extra styles, keep for clarity */
+
+.card{ background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.08)), var(--card);
+  border:1px solid rgba(255,255,255,.06); border-radius:var(--r); padding:var(--s3); box-shadow:var(--shadow); }
+
 .grid.two{ display:grid; grid-template-columns:1fr 1fr; gap:var(--s3); }
-@media (max-width:900px){ .grid.two{ grid-template-columns:1fr; } }
+@media (max-width:1000px){ .grid.two{ grid-template-columns:1fr; } }
+
 .row{ margin:var(--s1) 0; display:flex; gap:var(--s2); align-items:center; }
 .row.stack{ flex-direction:column; align-items:stretch; }
 label{ display:flex; flex-direction:column; gap:var(--s1); font-weight:600; color:var(--muted); }
@@ -32,36 +42,48 @@ button{
   cursor:pointer;
   transition:transform .05s ease, filter .2s ease;
 }
-.activity .row.stack button{ width:auto; align-self:flex-start; } /* tile buttons are natural width */
+.activity .row.stack button{ width:auto; align-self:flex-start; }
 button:hover{ filter:brightness(1.08); }
 button:active{ transform:translateY(1px); }
 button.secondary{ background:transparent; color:var(--text); border-color:rgba(255,255,255,.16); }
 button:disabled{ opacity:.6; cursor:not-allowed; }
-.actions{ display:flex; gap:var(--s2); margin-top:var(--s2); }
+.actions{ display:flex; gap:var(--s2); margin-top:var(--s2); flex-wrap:wrap; }
 .msg{ min-height:1.25em; color:var(--warn); margin-top:var(--s1); }
 .hidden{ display:none; } .muted{ color:var(--muted); } .small{ font-size:0.92rem; color:var(--muted); }
 
-/* Explicit state mappings to visible panels */
-body[data-state="auth-id"] #authLayout{ display:block !important; }
+/* ===== Auth Shell ===== */
+.auth-layout{
+  display:grid;
+  grid-template-columns: max-content 1fr; /* left auto to content, right fills */
+  gap:var(--s3);
+  align-items:start;
+}
+.auth-left{ display:block; min-width:260px; }
+#identifyPanel, #pinPanel{ width:fit-content; max-width:520px; } /* left panel sized to content */
+#lbPreview{ min-width:280px; }
+
+/* State visibility */
+body[data-state="auth-id"] #identifyPanel{ display:block !important; }
 body[data-state="auth-id"] #pinPanel{ display:none !important; }
-body[data-state="auth-pin"] #authLayout{ display:none !important; }
+body[data-state="auth-pin"] #identifyPanel{ display:none !important; }
 body[data-state="auth-pin"] #pinPanel{ display:block !important; }
-body[data-state="app"] #authLayout,
-body[data-state="app"] #pinPanel{ display:none !important; }
+body[data-state="auth-id"] #authLayout,
+body[data-state="auth-pin"] #authLayout{ display:grid !important; }
+body[data-state="app"] #authLayout{ display:none !important; }
 body[data-state="app"] #dashboard{ display:block !important; }
 body[data-state="auth-id"] #dashboard,
 body[data-state="auth-pin"] #dashboard{ display:none !important; }
 
-/* Auth layout */
-.auth-layout{ align-items:start; }
-.lb-preview .tight{ margin:0; padding-left:20px; } .lb-preview li{ padding:2px 0; opacity:.9; }
+/* PIN row alignment: checkbox stays near input, not far right */
+.pin-row{ display:flex; align-items:end; gap:var(--s2); flex-wrap:wrap; }
+.pin-row .input-wrap{ flex:1 1 260px; }
+.pin-row label.remember{ margin:0; } /* removed auto push */
 
-/* Theme toggle (only on auth screens) */
+/* Theme toggle */
 .theme-toggle{ position:fixed; right:var(--s2); top:var(--s2); z-index:1000; background:var(--card); color:var(--text); border:1px solid rgba(255,255,255,.16); box-shadow:var(--shadow); border-radius:12px; padding:10px 12px; }
 .theme-toggle.hidden{ display:none; }
 
-/* PIN row and activities */
-.pin-row{ align-items:end; gap:var(--s2); } .pin-row label.remember{ flex-direction:row; align-items:center; gap:var(--s1); margin-left:auto; }
+/* Activities */
 .activities{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:var(--s2); }
 .activity{ position:relative; padding:var(--s2); border:1px solid rgba(255,255,255,.12); border-radius:12px; background:rgba(255,255,255,.03); transition:filter .2s ease, opacity .2s ease; overflow:hidden; }
 .activity h3{ margin:0 0 var(--s1) 0; font-size:1.05rem; }

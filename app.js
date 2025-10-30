@@ -1,4 +1,4 @@
-// Explicit auth states: 'auth-id' -> 'auth-pin' -> 'app'
+// Auth UX: two-column auth with dynamic left panel and static gradient background
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if(!WEB_APP_URL){ console.error('WEB_APP_URL missing. Set it in config.js'); }
 
@@ -78,11 +78,10 @@ function renderDash(){
   renderActivities(cache.acts||[], cache.done||new Set());
 }
 
-// Step 1 -> Step 2
 async function goToPin(mode){
   cache.authMode = mode;
-  const uid = $('#idOnly')?.value.trim(); if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
-  setMsg('#idMsg',''); $('#idLoginBtn')?.setAttribute('disabled',''); $('#idRegisterBtn')?.setAttribute('disabled','');
+  const uid = $('#idOnly')?.value.trim(); if(!uid){ $('#idMsg').textContent='Enter an ID'; return; }
+  $('#idMsg').textContent=''; $('#idLoginBtn')?.setAttribute('disabled',''); $('#idRegisterBtn')?.setAttribute('disabled','');
   try{
     localStorage.setItem(K.uid, uid);
     if(!cache.lb){ const lb = await jget({action:'leaderboard'}); if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); } }
@@ -90,37 +89,34 @@ async function goToPin(mode){
     $('#helloName').textContent = (mode==='login')
       ? (exists?`Welcome back, ${name}!`:`Not registered yet — let's create your account, ${name}.`)
       : `Create your account, ${name}`;
-    if(mode==='login' && !exists){ cache.authMode='register'; showToast('User not found — switching to Register.','bad'); $('#primaryAuthBtn').textContent='Register'; }
-    else { $('#primaryAuthBtn').textContent=(cache.authMode==='login'?'Login':'Register'); }
+    if(mode==='login' && !exists){ cache.authMode='register'; document.querySelector('#primaryAuthBtn').textContent='Register'; }
+    else { document.querySelector('#primaryAuthBtn').textContent=(cache.authMode==='login'?'Login':'Register'); }
     precacheFor(uid).catch(()=>{});
-    // Replace the username panel with PIN/register panel
     showAuthPin();
-  }catch(e){ setMsg('#idMsg', e.message); } finally{ $('#idLoginBtn')?.removeAttribute('disabled'); $('#idRegisterBtn')?.removeAttribute('disabled'); }
+  }catch(e){ $('#idMsg').textContent = e.message; } finally{ $('#idLoginBtn')?.removeAttribute('disabled'); $('#idRegisterBtn')?.removeAttribute('disabled'); }
 }
 
 async function onPrimaryAuth(){
   const uid = store.uid() || $('#idOnly')?.value.trim();
   const pin = $('#pin')?.value.trim();
   const remember=$('#rememberPin')?.checked && !USE_SESSION_ONLY;
-  if(!uid||!pin){ setMsg('#loginMsg','Enter PIN'); return; }
+  if(!uid||!pin){ $('#loginMsg').textContent='Enter PIN'; return; }
   try{
-    $('#primaryAuthBtn')?.setAttribute('disabled','');
+    document.querySelector('#primaryAuthBtn')?.setAttribute('disabled','');
     if(cache.authMode==='register'){
       const displayName = uid;
       const res= await jpost({ action:'register', userId:uid, pin, displayName });
       if(!res.ok){ throw new Error(res.error||'Register failed'); }
-      showToast('Registered! Logging you in…','good');
     }
     const res= await jpost({ action:'login', userId:uid, pin });
     if(!res.ok){ throw new Error(res.error||'Login failed'); }
-    store.set(uid, pin, remember); setMsg('#loginMsg','');
+    store.set(uid, pin, remember); $('#loginMsg').textContent='';
     if(!cache.acts) await precacheFor(uid);
     const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok){ cache.profile={ userId:uid, balance:prof.balance, displayName:res.displayName||uid }; }
     renderDash();
-  } catch(e){ setMsg('#loginMsg', e.message); } finally{ $('#primaryAuthBtn')?.removeAttribute('disabled'); }
+  } catch(e){ $('#loginMsg').textContent = e.message; } finally{ document.querySelector('#primaryAuthBtn')?.removeAttribute('disabled'); }
 }
 
-// Instant verify + lock (unchanged behavior)
 async function onSubmit(ev){
   const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin(); if(!uid||!pin){ showToast('Please log in again.','bad'); return; }
   const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ showToast('Enter an answer','bad'); return; }
@@ -166,10 +162,8 @@ document.addEventListener('click', (e)=>{
   const y = document.querySelector('#year'); if(y) y.textContent = new Date().getFullYear();
   document.documentElement.classList.toggle('light', localStorage.getItem('cc.theme')==='light');
 
-  // default view
-  showAuthId();
+  showAuthId(); // default
 
-  // load preview leaderboard
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb = lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } });
 
   const uid = store.uid(); const pin = store.pin();

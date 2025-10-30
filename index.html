@@ -7,63 +7,61 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Classroom Challenge</title>
-
-  <!-- Bump this version whenever you deploy -->
-  <script>
-    window.ASSET_VERSION = '2025-10-29.3';
-  </script>
-
-  <!-- Versioned CSS (cache-busting) -->
-  <link rel="stylesheet" href="style.css?v=uc6" />
+  <script>window.ASSET_VERSION='2025-10-29.7';</script>
+  <link rel="stylesheet" href="style.css?v=uc7" />
 </head>
-<body>
-  <!-- Theme toggle appears only on auth screens -->
-  <button id="themeToggle" class="theme-toggle hidden" aria-label="Toggle theme">🌓</button>
+<body data-state="auth-id">
+  <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">🌓</button>
 
   <main>
-    <!-- Auth Layout: two columns on step 1 -->
-    <section id="authLayout" class="grid two auth-layout">
-      <!-- Step 1: Username with Login/Register choices -->
-      <section id="identifyPanel" class="card">
-        <h2>Welcome ✨</h2>
-        <div class="row">
-          <label>Student ID
-            <input id="idOnly" autocomplete="username" placeholder="e.g., s12345">
-          </label>
-        </div>
-        <div class="actions">
-          <button id="idLoginBtn">Login</button>
-          <button id="idRegisterBtn" class="secondary">Register</button>
-        </div>
-        <p id="idMsg" class="msg"></p>
-        <p id="precacheHint" class="muted hidden">Loading activities…</p>
-      </section>
+    <!-- Auth Shell: two-column layout for both steps -->
+    <section id="authLayout" class="auth-layout cardless">
+      <!-- Left column: Identify OR PIN (state decides which is visible) -->
+      <div class="auth-left">
+        <!-- Step 1: Username with Login/Register choices -->
+        <section id="identifyPanel" class="card">
+          <h2>Welcome ✨</h2>
+          <div class="row">
+            <label>Student ID
+              <input id="idOnly" autocomplete="username" placeholder="e.g., s12345">
+            </label>
+          </div>
+          <div class="actions">
+            <button id="idLoginBtn">Login</button>
+            <button id="idRegisterBtn" class="secondary">Register</button>
+          </div>
+          <p id="idMsg" class="msg"></p>
+          <p id="precacheHint" class="muted hidden">Loading activities…</p>
+        </section>
 
-      <!-- Right: non-invasive leaderboard preview -->
+        <!-- Step 2: PIN (same left column replaces Identify) -->
+        <section id="pinPanel" class="card">
+          <h2 id="helloName">Hi! 👋</h2>
+          <div class="row pin-row">
+            <div class="input-wrap">
+              <label>PIN
+                <input id="pin" type="password" autocomplete="current-password" placeholder="4–8 digits">
+              </label>
+            </div>
+            <label class="remember small"><input type="checkbox" id="rememberPin"> Remember PIN</label>
+          </div>
+          <div class="actions">
+            <button id="primaryAuthBtn">Login</button>
+            <button id="backToIdBtn" class="secondary">Back</button>
+          </div>
+          <p id="loginMsg" class="msg"></p>
+        </section>
+      </div>
+
+      <!-- Right column: leaderboard preview (shown during auth states) -->
       <aside id="lbPreview" class="card lb-preview">
         <h3>Leaderboard Preview 🏆</h3>
         <ol id="leaderboardPreview" class="tight"></ol>
       </aside>
     </section>
 
-    <!-- Step 2: PIN (single column) -->
-    <section id="pinPanel" class="card hidden">
-      <h2 id="helloName">Hi! 👋</h2>
-      <div class="row pin-row">
-        <label>PIN
-          <input id="pin" type="password" autocomplete="current-password" placeholder="4–8 digits">
-        </label>
-        <label class="remember small"><input type="checkbox" id="rememberPin"> Remember PIN</label>
-      </div>
-      <div class="actions">
-        <button id="primaryAuthBtn">Login</button>
-        <button id="backToIdBtn" class="secondary">Back</button>
-      </div>
-      <p id="loginMsg" class="msg"></p>
-    </section>
-
     <!-- App -->
-    <section id="dashboard" class="hidden">
+    <section id="dashboard" class="card">
       <div class="grid two">
         <div class="card" id="profileCard">
           <h2>Profile 👤</h2>
@@ -84,43 +82,34 @@
     </section>
   </main>
 
-  <!-- Toasts / inline notifications -->
   <div id="toast" class="toast hidden"></div>
+  <footer class="footer">© <span id="year"></span> • Classroom Challenge • Build <span id="build"></span></footer>
 
-  <footer class="footer">© <span id="year"></span> • Classroom Challenge</footer>
-
-  <!-- Service Worker handling with purge + versioned registration -->
   <script>
+    // Panic purge if needed
     (async () => {
-      try {
-        // 1) Unregister any old service workers
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          for (const r of regs) { await r.unregister(); }
-        }
-
-        // 2) Clear all caches (this wipes old sw caches too)
-        if (window.caches && caches.keys) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }
-      } catch (e) {
-        console.warn('Cache/SW purge warning:', e);
-      } finally {
-        // 3) Re-register the SW with a versioned URL (so it fetches fresh)
-        if ('serviceWorker' in navigator) {
-          try {
-            await navigator.serviceWorker.register('./sw.js?v=' + encodeURIComponent(window.ASSET_VERSION));
-          } catch (e) {
-            console.warn('SW register failed (continuing without SW):', e);
+      const u = new URL(location.href);
+      if (u.searchParams.get('clear') === '1') {
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) await r.unregister();
           }
+          if (window.caches && caches.keys) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+          localStorage.clear(); sessionStorage.clear();
+        } finally {
+          u.searchParams.delete('clear');
+          location.replace(u.toString());
         }
       }
+      document.querySelector('#build').textContent = window.ASSET_VERSION || 'dev';
     })();
   </script>
 
-  <!-- Load config BEFORE app.js so the URL persists across patches (versioned) -->
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=uc6"></script>
+  <script src="app.js?v=uc7"></script>
 </body>
 </html>
