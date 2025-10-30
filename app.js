@@ -1,11 +1,11 @@
-// Auth UX: two-column auth with dynamic left panel and static gradient background
+// Archive chip (Last 5) + existing shimmer/archive drawer
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if(!WEB_APP_URL){ console.error('WEB_APP_URL missing. Set it in config.js'); }
 
-const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities', subs:'cc.subs', lb:'cc.lb', gm:'cc.grading' };
+const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities', subs:'cc.subs', lb:'cc.lb', gm:'cc.grading', arch:'cc.archive' };
 const store = {
   set(uid, pin, remember){ localStorage.setItem(K.uid, uid); (remember? localStorage: sessionStorage).setItem(K.pin, pin); if(!remember) localStorage.removeItem(K.pin); },
-  clear(){ localStorage.removeItem(K.uid); localStorage.removeItem(K.pin); sessionStorage.removeItem(K.pin); },
+  clear(){ localStorage.removeItem(K.uid); localStorage.removeItem(K.pin); sessionStorage.removeItem(K.pin); localStorage.removeItem(K.arch); },
   uid(){ return localStorage.getItem(K.uid); },
   pin(){ return sessionStorage.getItem(K.pin) || localStorage.getItem(K.pin); }
 };
@@ -13,10 +13,7 @@ const $ = s => document.querySelector(s);
 const jget  = p   => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method:'GET' }).then(r=>r.json());
 const jpost = body => fetch(WEB_APP_URL, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' }, body:new URLSearchParams(body) }).then(r => r.json());
 
-function setState(state){ // 'auth-id' | 'auth-pin' | 'app'
-  document.body.setAttribute('data-state', state);
-  const tt = $('#themeToggle'); if(tt){ tt.classList.toggle('hidden', state === 'app'); }
-}
+function setState(state){ document.body.setAttribute('data-state', state); const tt=$('#themeToggle'); if(tt){ tt.classList.toggle('hidden', state==='app'); } }
 const setMsg = (id, m)=>{ $(id).textContent = m||''; };
 
 let toastTimer=null;
@@ -25,7 +22,7 @@ function showToast(msg, kind=''){ const t=$('#toast'); t.textContent=msg; t.clas
 const norm = s => (s||'').toString().trim().toLowerCase();
 async function sha256Hex(str){ const enc=new TextEncoder(); const buf=await crypto.subtle.digest('SHA-256', enc.encode(str)); return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join(''); }
 
-const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login' };
+const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login', archive:[] };
 
 function renderProfile(p){ $('#displayName').textContent = p.displayName||p.userId; $('#coinBalance').textContent = p.balance??0; }
 function renderLeaderboard(rows){ const ol=$('#leaderboard'); if(!ol) return; ol.innerHTML=''; (rows||[]).forEach((r,i)=>{ const li=document.createElement('li'); const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${medal} ${r.name} — 🪙 ${r.score}`; ol.appendChild(li); }); }
@@ -52,6 +49,48 @@ function renderActivities(list, doneSet){
   wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit));
 }
 
+// Archive drawer + chip
+function loadArchive(){ try{ cache.archive = JSON.parse(localStorage.getItem(K.arch) || '[]'); } catch{ cache.archive=[]; } }
+function saveArchive(){ localStorage.setItem(K.arch, JSON.stringify(cache.archive)); }
+function renderArchive(){
+  const ul = $('#archiveList'); if(!ul) return; ul.innerHTML='';
+  if(!cache.archive.length){ ul.innerHTML = '<li class="muted">No previous activities yet.</li>'; return; }
+  cache.archive.forEach(item=>{
+    const li=document.createElement('li'); li.className='archive-item'; li.setAttribute('data-id', item.activityId); li.setAttribute('aria-expanded','false');
+    const pillClass = item.correct===true?'good':item.correct===false?'bad':'neutral';
+    li.innerHTML = `<div class="hdr">
+        <div>
+          <strong>${item.title||item.activityId}</strong>
+          <div class="meta">${new Date(item.timestamp).toLocaleString()} • <span class="pill ${pillClass}">${item.correct===true?'Correct ✅':item.correct===false?'Incorrect ❌':'Submitted ℹ️'}</span> • 🪙 ${item.points||0}</div>
+        </div>
+        <button class="secondary small toggle-detail">Details</button>
+      </div>
+      <div class="detail">
+        <div><strong>Your answer:</strong></div>
+        <div class="answer">${(item.answer||'—').replace(/[<>&]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}</div>
+        <div class="correct">${item.correctAnswer ? `<strong>Correct answer:</strong> ${item.correctAnswer}` : '<em>Correct answer hidden</em>'}</div>
+      </div>`;
+    ul.appendChild(li);
+  });
+  ul.querySelectorAll('.toggle-detail').forEach(btn => btn.addEventListener('click', (e)=>{
+    const li = e.currentTarget.closest('.archive-item'); const open = li.getAttribute('aria-expanded')==='true';
+    li.setAttribute('aria-expanded', open?'false':'true');
+  }));
+}
+function renderArchiveChip(){
+  const chipbar = $('#archiveChip'); if(!chipbar) return;
+  chipbar.innerHTML='';
+  const recent = (cache.archive||[]).slice(0,5);
+  if(!recent.length) return;
+  recent.forEach(item=>{
+    const cls = item.correct===true?'good':item.correct===false?'bad':'neutral';
+    const emoji = item.correct===true?'✅':item.correct===false?'❌':'ℹ️';
+    const div=document.createElement('div'); div.className='chip '+cls; div.setAttribute('data-id', item.activityId);
+    div.innerHTML = `<span class="e">${emoji}</span><span class="title">${(item.title||item.activityId)}</span>`;
+    chipbar.appendChild(div);
+  });
+}
+
 async function precacheFor(uid){
   const [acts, lb, gm, subs, prof] = await Promise.all([
     jget({action:'getactivities'}),
@@ -65,6 +104,7 @@ async function precacheFor(uid){
   if(gm.ok)   { cache.gm   = gm; localStorage.setItem(K.gm, JSON.stringify(gm)); }
   if(subs.ok) { cache.done = new Set((subs.submissions||[]).map(s=>s.activityId)); localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }
   if(prof.ok) { cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }
+  loadArchive(); renderArchive(); renderArchiveChip();
 }
 
 function showAuthId(){ setState('auth-id'); }
@@ -76,6 +116,7 @@ function renderDash(){
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
+  renderArchive(); renderArchiveChip();
 }
 
 async function goToPin(mode){
@@ -117,6 +158,13 @@ async function onPrimaryAuth(){
   } catch(e){ $('#loginMsg').textContent = e.message; } finally{ document.querySelector('#primaryAuthBtn')?.removeAttribute('disabled'); }
 }
 
+function archivePush(entry){
+  cache.archive = cache.archive.filter(x => x.activityId !== entry.activityId);
+  cache.archive.unshift(entry);
+  saveArchive();
+  renderArchive(); renderArchiveChip();
+}
+
 async function onSubmit(ev){
   const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin(); if(!uid||!pin){ showToast('Please log in again.','bad'); return; }
   const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ showToast('Enter an answer','bad'); return; }
@@ -134,6 +182,7 @@ async function onSubmit(ev){
 
   setTileState(id, verdict==='success'?'success':verdict==='fail'?'fail':'neutral');
   tile?.classList.add('done','locked'); if(inp) inp.disabled=true; btn.disabled=true;
+
   if(verdict==='success'){ const bal = Number($('#coinBalance').textContent||0) + points; $('#coinBalance').textContent = bal; showToast(`✅ Correct! +🪙 ${points}`,'good'); }
   else if(verdict==='fail'){ showToast('❌ Not quite — recorded.','bad'); }
   else { showToast('ℹ️ Submitted.',''); }
@@ -143,8 +192,22 @@ async function onSubmit(ev){
     if(!res.ok){ throw new Error(res.error||'Submit failed'); }
     const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok){ $('#coinBalance').textContent = prof.balance; }
     const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
+
+    const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
+    archivePush({
+      activityId:id,
+      title: act.title || id,
+      points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0),
+      correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)),
+      answer,
+      correctAnswer: act.correctAnswer || null,
+      timestamp: new Date().toISOString()
+    });
+
+    if(tile){ tile.style.transform='scale(0.98)'; tile.style.opacity='0.0'; setTimeout(()=>{ tile.remove(); }, 260); }
+
   } catch(e){
-    tile?.classList.remove('done','locked'); if(inp){ inp.disabled=false; } btn.disabled=false; showToast(e.message,'bad');
+    tile?.classList.remove('done','locked','success','fail','neutral'); if(inp){ inp.disabled=false; } btn.disabled=false; showToast(e.message,'bad');
   }
 }
 
@@ -153,20 +216,33 @@ document.addEventListener('click', (e)=>{
   if(e.target && e.target.id==='idLoginBtn') goToPin('login');
   if(e.target && e.target.id==='idRegisterBtn') goToPin('register');
   if(e.target && e.target.id==='primaryAuthBtn') onPrimaryAuth();
-  if(e.target && e.target.id==='backToIdBtn'){ showAuthId(); }
+  if(e.target && e.target.id==='backToIdBtn'){ setState('auth-id'); }
   if(e.target && e.target.id==='logoutBtn'){ store.clear(); location.reload(); }
+  if(e.target && e.target.id==='archiveToggle'){
+    const p = $('#archivePanel'); const btn=e.target;
+    const open = p.hasAttribute('hidden') ? false : true;
+    if(open){ p.setAttribute('hidden',''); btn.setAttribute('aria-expanded','false'); }
+    else { p.removeAttribute('hidden'); btn.setAttribute('aria-expanded','true'); }
+  }
+  if(e.target && (e.target.id==='archiveChip' || e.target.closest && e.target.closest('#archiveChip'))){
+    const p = $('#archivePanel'); const btn=$('#archiveToggle');
+    if(p.hasAttribute('hidden')){ p.removeAttribute('hidden'); btn && btn.setAttribute('aria-expanded','true'); p.scrollIntoView({behavior:'smooth', block:'start'}); }
+    else { p.scrollIntoView({behavior:'smooth', block:'start'}); }
+  }
 });
 
 // Boot
 (function boot(){
   const y = document.querySelector('#year'); if(y) y.textContent = new Date().getFullYear();
+  document.querySelector('#build').textContent = (window.ASSET_VERSION||'dev');
   document.documentElement.classList.toggle('light', localStorage.getItem('cc.theme')==='light');
 
-  showAuthId(); // default
+  setState('auth-id');
 
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb = lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } });
 
   const uid = store.uid(); const pin = store.pin();
+  loadArchive(); renderArchiveChip();
   if(uid && pin){
     precacheFor(uid).finally(()=>{ renderDash(); });
   }
