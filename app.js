@@ -1,4 +1,4 @@
-// Robust state machine to ensure auth panels are hidden after login
+// Explicit auth states: 'auth-id' -> 'auth-pin' -> 'app'
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if(!WEB_APP_URL){ console.error('WEB_APP_URL missing. Set it in config.js'); }
 
@@ -13,28 +13,22 @@ const $ = s => document.querySelector(s);
 const jget  = p   => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method:'GET' }).then(r=>r.json());
 const jpost = body => fetch(WEB_APP_URL, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' }, body:new URLSearchParams(body) }).then(r => r.json());
 
-// UI State machine
-function setState(state){ // 'auth' | 'pin' | 'app'
+function setState(state){ // 'auth-id' | 'auth-pin' | 'app'
   document.body.setAttribute('data-state', state);
-  // Theme toggle only on auth/pin
-  const tt = $('#themeToggle');
-  if(tt){ tt.classList.toggle('hidden', state === 'app'); }
+  const tt = $('#themeToggle'); if(tt){ tt.classList.toggle('hidden', state === 'app'); }
 }
 const setMsg = (id, m)=>{ $(id).textContent = m||''; };
 
-// Toasts
 let toastTimer=null;
 function showToast(msg, kind=''){ const t=$('#toast'); t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
-// Crypto helpers
 const norm = s => (s||'').toString().trim().toLowerCase();
 async function sha256Hex(str){ const enc=new TextEncoder(); const buf=await crypto.subtle.digest('SHA-256', enc.encode(str)); return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join(''); }
 
-// Cache
 const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login' };
 
 function renderProfile(p){ $('#displayName').textContent = p.displayName||p.userId; $('#coinBalance').textContent = p.balance??0; }
-function renderLeaderboard(rows){ const ol=$('#leaderboard'); ol.innerHTML=''; (rows||[]).forEach((r,i)=>{ const li=document.createElement('li'); const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${medal} ${r.name} — 🪙 ${r.score}`; ol.appendChild(li); }); }
+function renderLeaderboard(rows){ const ol=$('#leaderboard'); if(!ol) return; ol.innerHTML=''; (rows||[]).forEach((r,i)=>{ const li=document.createElement('li'); const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${medal} ${r.name} — 🪙 ${r.score}`; ol.appendChild(li); }); }
 function renderLeaderboardPreview(rows){ const ol=$('#leaderboardPreview'); if(!ol) return; ol.innerHTML=''; (rows||[]).slice(0,8).forEach((r,i)=>{ const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; const li=document.createElement('li'); li.textContent=`${medal} ${r.name} — ${r.score}`; ol.appendChild(li); }); }
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`) }
 function setTileState(id, state){ const el=tileEl(id); if(!el) return; el.classList.remove('processing','success','fail','neutral'); if(state){ el.classList.add(state,'locked'); } }
@@ -73,9 +67,8 @@ async function precacheFor(uid){
   if(prof.ok) { cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }
 }
 
-// Route helpers
-function showAuth(){ setState('auth'); }
-function showPin(){ setState('pin'); }
+function showAuthId(){ setState('auth-id'); }
+function showAuthPin(){ setState('auth-pin'); }
 function showApp(){ setState('app'); }
 
 function renderDash(){
@@ -85,6 +78,7 @@ function renderDash(){
   renderActivities(cache.acts||[], cache.done||new Set());
 }
 
+// Step 1 -> Step 2
 async function goToPin(mode){
   cache.authMode = mode;
   const uid = $('#idOnly')?.value.trim(); if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
@@ -93,10 +87,14 @@ async function goToPin(mode){
     localStorage.setItem(K.uid, uid);
     if(!cache.lb){ const lb = await jget({action:'leaderboard'}); if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); } }
     const check = await jget({action:'checkuser', userId:uid}); const exists = check.ok && check.exists; const name = exists ? (check.displayName||uid) : uid;
-    $('#helloName').textContent = (mode==='login') ? (exists?`Welcome back, ${name}!`:`Not registered yet — let's create your account, ${name}.`) : `Create your account, ${name}`;
-    if(mode==='login' && !exists){ cache.authMode='register'; showToast('User not found — switching to Register.','bad'); $('#primaryAuthBtn').textContent='Register'; } else { $('#primaryAuthBtn').textContent=(cache.authMode==='login'?'Login':'Register'); }
+    $('#helloName').textContent = (mode==='login')
+      ? (exists?`Welcome back, ${name}!`:`Not registered yet — let's create your account, ${name}.`)
+      : `Create your account, ${name}`;
+    if(mode==='login' && !exists){ cache.authMode='register'; showToast('User not found — switching to Register.','bad'); $('#primaryAuthBtn').textContent='Register'; }
+    else { $('#primaryAuthBtn').textContent=(cache.authMode==='login'?'Login':'Register'); }
     precacheFor(uid).catch(()=>{});
-    showPin();
+    // Replace the username panel with PIN/register panel
+    showAuthPin();
   }catch(e){ setMsg('#idMsg', e.message); } finally{ $('#idLoginBtn')?.removeAttribute('disabled'); $('#idRegisterBtn')?.removeAttribute('disabled'); }
 }
 
@@ -122,13 +120,12 @@ async function onPrimaryAuth(){
   } catch(e){ setMsg('#loginMsg', e.message); } finally{ $('#primaryAuthBtn')?.removeAttribute('disabled'); }
 }
 
-// Instant verify + lock
+// Instant verify + lock (unchanged behavior)
 async function onSubmit(ev){
   const id=ev.currentTarget.dataset.id; const uid=store.uid(); const pin=store.pin(); if(!uid||!pin){ showToast('Please log in again.','bad'); return; }
   const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ showToast('Enter an answer','bad'); return; }
   const btn=ev.currentTarget; const tile=tileEl(id);
 
-  // Instant verdict
   let verdict='neutral', points=0;
   try{
     const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
@@ -145,14 +142,12 @@ async function onSubmit(ev){
   else if(verdict==='fail'){ showToast('❌ Not quite — recorded.','bad'); }
   else { showToast('ℹ️ Submitted.',''); }
 
-  // Server reconcile
   try{
     const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
     if(!res.ok){ throw new Error(res.error||'Submit failed'); }
     const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok){ $('#coinBalance').textContent = prof.balance; }
     const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
   } catch(e){
-    // let them retry later if server failed
     tile?.classList.remove('done','locked'); if(inp){ inp.disabled=false; } btn.disabled=false; showToast(e.message,'bad');
   }
 }
@@ -162,26 +157,23 @@ document.addEventListener('click', (e)=>{
   if(e.target && e.target.id==='idLoginBtn') goToPin('login');
   if(e.target && e.target.id==='idRegisterBtn') goToPin('register');
   if(e.target && e.target.id==='primaryAuthBtn') onPrimaryAuth();
-  if(e.target && e.target.id==='backToIdBtn'){ showAuth(); }
+  if(e.target && e.target.id==='backToIdBtn'){ showAuthId(); }
   if(e.target && e.target.id==='logoutBtn'){ store.clear(); location.reload(); }
 });
 
 // Boot
 (function boot(){
-  // Build stamp if present
   const y = document.querySelector('#year'); if(y) y.textContent = new Date().getFullYear();
   document.documentElement.classList.toggle('light', localStorage.getItem('cc.theme')==='light');
 
-  // Default to auth state; flip later if session exists
-  setState('auth');
+  // default view
+  showAuthId();
 
-  // Load preview leaderboard for auth screen
-  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb = lb.leaderboard; renderLeaderboardPreview(cache.lb); } });
+  // load preview leaderboard
+  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb = lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } });
 
   const uid = store.uid(); const pin = store.pin();
   if(uid && pin){
     precacheFor(uid).finally(()=>{ renderDash(); });
-  } else {
-    showAuth();
   }
 })();
