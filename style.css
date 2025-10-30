@@ -325,7 +325,6 @@ body[data-state="app"] #dashboard{ display:block; }
   z-index:10000;
 }
 
-
 /* Avatar Picker */
 .avatar-picker { display: grid; gap: 0.75rem; margin-top: .5rem; }
 .avatar-picker__title { font-weight: 600; opacity: .9; }
@@ -341,7 +340,6 @@ body[data-state="app"] #dashboard{ display:block; }
 .avatar-card.is-selected { border-color: var(--accent-amber, #FF9F2E); box-shadow: 0 0 0 2px rgba(255,159,46,.25) inset; }
 .avatar-card img { width: 64px; height: 64px; object-fit: contain; display: block; margin: 4px auto 6px; }
 .avatar-card__label { font-size: 12px; opacity: .85; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
 /* Avatar chips for profile/leaderboard */
 .avatar-chip {
   width: 28px; height: 28px; border-radius: 50%; object-fit: cover; display: inline-block; vertical-align: middle;

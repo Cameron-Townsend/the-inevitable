@@ -1,13 +1,5 @@
-
-// === Avatar helpers (v19.1) ===
-function setProfileAvatar(url){
-  var img = document.getElementById('profile-avatar');
-  if (img) img.src = url || 'avatars/happy-face.png';
-}
-function updateVisibleLeaderboardAvatar(userId, url){
-  document.querySelectorAll('img.avatar-chip[data-user="'+userId+'"]').forEach(function(img){ img.src = url; });
-}
-
+function setProfileAvatar(url){ const img=document.getElementById('profile-avatar'); if(img) img.src = url || 'avatars/happy-face.png'; }
+function updateVisibleLeaderboardAvatar(userId,url){ document.querySelectorAll('img.avatar-chip[data-user="'+userId+'"]').forEach(img=>img.src=url); }
 // Classroom Challenge — app v19 (hide completed tiles across reload; archive only)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
@@ -74,24 +66,10 @@ function loadDoneFromStorage(){ try{ const arr = JSON.parse(localStorage.getItem
 function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
 
 // Renderers
-function renderProfile(p){ $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId); $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0);   try{ if(p && p.avatarURL) setProfileAvatar(p.avatarURL); }catch{} }
-
-function renderLeaderboard(rows){
-  const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).forEach((r,i)=>{
-    const li = document.createElement('li');
-    const m = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
-    const img = document.createElement('img');
-    img.className='avatar-chip';
-    img.alt=(r.name||r.userId)+' avatar';
-    img.src = r.avatarURL || 'avatars/happy-face.png';
-    img.setAttribute('data-user', r.userId);
-    const text = document.createElement('span');
-    text.textContent = ` ${m} ${r.name} — 🪙 ${r.score}`;
-    li.appendChild(img);
-    li.appendChild(text);
-    ol.appendChild(li);
-  });
+function renderProfile(p){
+  $('#displayName') && ($('#displayName').textContent = p.displayName || p.userId || '—');
+  $('#coinBalance') && ($('#coinBalance').textContent = p.balance ?? 0);
+  try { if (p && p.avatarURL) setProfileAvatar(p.avatarURL); } catch {}
 }
 function renderLeaderboardPreview(rows){
   const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
@@ -158,31 +136,22 @@ let toastTimer=null;
 function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
 // Data fetching
-async function precacheFor(uid){
-  const avatarsP = jget({action:'getavatars'});
-  return (async ()=>{
+async async function precacheFor(uid){
+  const avatarsP = jget({ action: 'getavatars' }).catch(()=>({ok:false}));
   const [acts, lb, gm, subs, prof] = await Promise.all([
-    jget({action:'getactivities'
-  const avatars = await avatarsP; if(avatars.ok){ cache.avatars = avatars.avatars; try{ localStorage.setItem('cc.avatars', JSON.stringify(cache.avatars)); }catch{} }
-  return true; })();
-}),
-    jget({action:'leaderboard'}),
-    jget({action:'getgradingmap'}),
-    uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
-    uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0})
+    jget({ action: 'getactivities' }),
+    jget({ action: 'leaderboard' }),
+    jget({ action: 'getgradingmap' }),
+    uid ? jget({ action: 'getsubmissions', userId: uid }) : Promise.resolve({ ok:true, submissions: [] }),
+    uid ? jget({ action: 'getprofile',    userId: uid }) : Promise.resolve({ ok:true, userId: uid, balance: 0 })
   ]);
-  if(acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{} }
-  if(lb.ok){   cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb)); }catch{} renderLeaderboardPreview(cache.lb); }
-  if(gm.ok){   cache.gm   = gm; try{ localStorage.setItem(K.gm,   JSON.stringify(gm)); }catch{} }
-  if(subs.ok){
-    cache.done = new Set((subs.submissions||[]).map(s=>s.activityId));
-    try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{}
-  } else {
-    // Fallback to previously stored done set
-    loadDoneFromStorage();
-  }
-  if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
-  loadArchive(); renderArchive();
+  if (acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{} }
+  if (lb.ok){   cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb));   }catch{} }
+  if (gm.ok){   cache.gm   = { salt: gm.salt, map: gm.map }; try{ localStorage.setItem(K.gm, JSON.stringify(cache.gm)); }catch{} }
+  if (subs.ok){ cache.done = new Set(subs.submissions.map(s=>s.activityId)); try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
+  if (prof.ok){ cache.profile = prof; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
+  const av = await avatarsP;
+  if (av.ok){ cache.avatars = av.avatars; try{ localStorage.setItem('cc.avatars', JSON.stringify(cache.avatars)); }catch{} }
 }
 
 function renderDash(){
@@ -190,6 +159,7 @@ function renderDash(){
   // Ensure done set is loaded even if offline
   if (!cache.done || cache.done.size===0) loadDoneFromStorage();
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
+  try{ if(cache.profile) bindProfileAvatarFromPayload(cache.profile); }catch{}
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
@@ -370,67 +340,25 @@ document.readyState === 'loading'
   ? document.addEventListener('DOMContentLoaded', boot, { once:true })
   : boot();
 
-
-function bindProfileAvatarFromPayload(payload){
-  if (!payload) return;
-  if (payload.avatarURL) { try { setProfileAvatar(payload.avatarURL); } catch(_){} }
-  // Mount picker if available
+function bindProfileAvatarFromPayload(profile){
+  try{ if(profile && profile.avatarURL) setProfileAvatar(profile.avatarURL); }catch{}
   var mount = document.getElementById('avatar-picker');
-  if (mount && window.AvatarPicker && payload.userId){
+  if (mount && window.AvatarPicker && profile && profile.userId){
     var picker = window.AvatarPicker({
       apiBase: ClassroomConfig.WEB_APP_URL,
-      user: { userId: payload.userId, avatarId: payload.avatarId||'', avatarURL: payload.avatarURL||'' },
-    avatars: (cache && cache.avatars) || (function(){ try{return JSON.parse(localStorage.getItem('cc.avatars')||'[]')}catch{return []} })(),
+      user: { userId: profile.userId, avatarId: profile.avatarId||'', avatarURL: profile.avatarURL||'' },
+      avatars: (cache && cache.avatars) || (function(){ try{return JSON.parse(localStorage.getItem('cc.avatars')||'[]')}catch{return []} })(),
       onChanged: function(url, id){
         if (window.showToast) showToast('Avatar updated!');
         setProfileAvatar(url);
-        try {
-          var cached = JSON.parse(localStorage.getItem('cc.profile') || '{}');
+        try{
+          var cached = JSON.parse(localStorage.getItem(K.prof) || '{}');
           cached.avatarId = id; cached.avatarURL = url;
-          localStorage.setItem('cc.profile', JSON.stringify(cached));
-        } catch(e){}
-        updateVisibleLeaderboardAvatar(payload.userId, url);
+          localStorage.setItem(K.prof, JSON.stringify(cached));
+        }catch{}
+        updateVisibleLeaderboardAvatar(profile.userId, url);
       }
     });
     picker.mount(mount);
   }
 }
-
-
-
-
-// Decorate leaderboard entries with avatar chips if backend provides avatar URLs
-(function(){
-  var lb = document.getElementById('leaderboard');
-  if (!lb) return;
-  var decorate = function(){
-    // If rows already contain avatar-chip, skip
-    if (lb.querySelector('img.avatar-chip')) return;
-    // Try to fetch the leaderboard dataset and re-render minimally
-    try {
-      var url = new URL(ClassroomConfig.WEB_APP_URL);
-      url.searchParams.set('action','leaderboard');
-      fetch(url.toString()).then(function(r){ return r.json(); }).then(function(j){
-        if (!j || !j.ok || !Array.isArray(j.leaderboard)) return;
-        // Build simple list
-        lb.innerHTML='';
-        j.leaderboard.forEach(function(r){
-          var li = document.createElement('li');
-          var img = document.createElement('img');
-          img.className='avatar-chip';
-          img.alt=(r.name||r.userId)+' avatar';
-          img.src = r.avatarURL || 'avatars/happy-face.png';
-          img.setAttribute('data-user', r.userId);
-          var span = document.createElement('span');
-          span.textContent = ' ' + (r.name||r.userId) + ' — ' + r.score;
-          li.appendChild(img); li.appendChild(span);
-          lb.appendChild(li);
-        });
-      });
-    } catch(e){}
-  };
-  // Try decorate after DOM ready and whenever list mutates
-  if (document.readyState !== 'loading') decorate();
-  else document.addEventListener('DOMContentLoaded', decorate);
-  new MutationObserver(function(){ decorate(); }).observe(lb, { childList:true });
-})();

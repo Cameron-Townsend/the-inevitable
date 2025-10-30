@@ -18,7 +18,8 @@
       const grid = h('div','avatar-picker__grid');
       (state.avatars||[]).forEach(a=>{
         const card = h('button','avatar-card'); card.type='button'; card.title=a.avatarId;
-        const img = new Image(); img.src=a.avatarURL; img.onerror=function(){ img.src='avatars/happy-face.png'; }; img.alt=a.avatarId; img.loading='lazy';
+        const img = new Image(); img.src=a.avatarURL; img.alt=a.avatarId; img.loading='lazy';
+        img.onerror = function(){ img.src='avatars/happy-face.png'; };
         const cap = h('div','avatar-card__label', a.avatarId);
         if (a.avatarId===state.selected) card.classList.add('is-selected');
         card.appendChild(img); card.appendChild(cap);
