@@ -1,9 +1,4 @@
-// Classroom Challenge — app fixes v12
-// - Immediate PIN/Register panel after ID
-// - Reliable state switches
-// - Leaderboard refresh on landing
-// - Spinner + shimmer kept
-
+// Auth busy overlay + tighter tiles + chipbar hidden when empty
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if(!WEB_APP_URL){ console.error('WEB_APP_URL missing. Set it in config.js'); }
 
@@ -14,18 +9,20 @@ const store = {
   uid(){ return localStorage.getItem(K.uid); },
   pin(){ return sessionStorage.getItem(K.pin) || localStorage.getItem(K.pin); }
 };
-
-const $  = (s,root=document)=> root.querySelector(s);
-const $$ = (s,root=document)=> Array.from(root.querySelectorAll(s));
+const $ = s => document.querySelector(s);
 
 const jget  = p   => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method:'GET' }).then(r=>r.json());
 const jpost = body => fetch(WEB_APP_URL, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8' }, body:new URLSearchParams(body) }).then(r => r.json());
 
-function setState(state){
-  document.body.setAttribute('data-state', state);
-  const tt=$('#themeToggle'); if(tt){ tt.classList.toggle('hidden', state==='app'); }
+function setState(state){ document.body.setAttribute('data-state', state); const tt=$('#themeToggle'); if(tt){ tt.classList.toggle('hidden', state==='app'); } }
+const setMsg = (id, m)=>{ const el=$(id); if(el) el.textContent = m||''; };
+
+// Global busy overlay helpers
+function busy(on, text){
+  const ov = $('#busyOverlay'); if(!ov) return;
+  if(text) ov.querySelector('.busy-text').textContent = text;
+  ov.classList.toggle('hidden', !on);
 }
-const setMsg = (sel, m)=>{ const el=$(sel); if(el) el.textContent = m||''; };
 
 let toastTimer=null;
 function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
@@ -61,7 +58,7 @@ function renderActivities(list, doneSet){
   wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit, { passive:true }));
 }
 
-// Archive (same as prior builds)
+// Archive helpers
 function loadArchive(){ try{ cache.archive = JSON.parse(localStorage.getItem(K.arch) || '[]'); } catch{ cache.archive=[]; } }
 function saveArchive(){ try{ localStorage.setItem(K.arch, JSON.stringify(cache.archive)); }catch{} }
 function renderArchive(){
@@ -94,10 +91,10 @@ function renderArchiveChip(){
   chipbar.innerHTML='';
   const recent = (cache.archive||[]).slice(0,5);
   if(!recent.length){
-    const div=document.createElement('div'); div.className='chip neutral'; div.textContent='📂 Archive';
-    chipbar.appendChild(div);
+    chipbar.classList.add('hidden');
     return;
   }
+  chipbar.classList.remove('hidden');
   recent.forEach(item=>{
     const cls = item.correct===true?'good':item.correct===false?'bad':'neutral';
     const emoji = item.correct===true?'✅':item.correct===false?'❌':'ℹ️';
@@ -133,26 +130,21 @@ function renderDash(){
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive(); renderArchiveChip();
-  // Extra refresh pass to ensure leaderboard is current on land
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
 }
 
-// === Auth flow ===
+// === Auth flow with busy overlay ===
 async function goToPin(mode){
   cache.authMode = mode;
-  const uidInput = $('#idOnly');
-  const uid = uidInput ? uidInput.value.trim() : '';
-  if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
+  const uid = $('#idOnly')?.value.trim(); if(!uid){ setMsg('#idMsg','Enter an ID'); return; }
   setMsg('#idMsg','');
   localStorage.setItem(K.uid, uid);
 
-  // Immediately show PIN/register pane to avoid "nothing happened" feel
   showAuthPin();
-  const primaryBtn = $('#primaryAuthBtn');
-  if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
+  const primaryBtn = $('#primaryAuthBtn'); if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
 
-  // Kick off background fetches
   try{
+    busy(true, 'Checking ID…');
     if(!cache.lb){
       const lb = await jget({action:'leaderboard'});
       if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); }
@@ -163,24 +155,22 @@ async function goToPin(mode){
     $('#helloName').textContent = (mode==='login')
       ? (exists?`Welcome back, ${name}!`:`Not registered yet — let's create your account, ${name}.`)
       : `Create your account, ${name}`;
-    // If user chose Login but account doesn't exist, flip to register
-    if(mode==='login' && !exists){
-      cache.authMode = 'register';
-      if(primaryBtn) primaryBtn.textContent = 'Register';
-    }
-    // Warm cache in background
+    if(mode==='login' && !exists){ cache.authMode = 'register'; if(primaryBtn) primaryBtn.textContent='Register'; }
     precacheFor(uid).catch(()=>{});
   }catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
+  } finally {
+    busy(false);
   }
 }
 
 async function onPrimaryAuth(){
-  const uid = store.uid() || ($('#idOnly')?.value.trim());
+  const uid = store.uid() || $('#idOnly')?.value.trim();
   const pin = $('#pin')?.value.trim();
   const remember=$('#rememberPin')?.checked && !USE_SESSION_ONLY;
   if(!uid||!pin){ setMsg('#loginMsg','Enter PIN'); return; }
   const button = $('#primaryAuthBtn'); if(button) button.setAttribute('disabled','');
+  busy(true, cache.authMode==='register' ? 'Creating account…' : 'Signing in…');
   try{
     if(cache.authMode==='register'){
       const res= await jpost({ action:'register', userId:uid, pin, displayName:uid });
@@ -189,19 +179,19 @@ async function onPrimaryAuth(){
     const res= await jpost({ action:'login', userId:uid, pin });
     if(!res.ok){ throw new Error(res.error||'Login failed'); }
     store.set(uid, pin, remember); setMsg('#loginMsg','');
-    await precacheFor(uid); // ensure data in place
-    // Refresh profile with displayName from login if present
+    await precacheFor(uid);
     cache.profile = cache.profile || { userId:uid, balance:0 };
     cache.profile.displayName = res.displayName || cache.profile.displayName || uid;
     renderDash();
   } catch(e){
     setMsg('#loginMsg', e.message||'Auth error');
   } finally {
+    busy(false);
     if(button) button.removeAttribute('disabled');
   }
 }
 
-// === Submit flow (spinner->shimmer->gray) preserved ===
+// === Submit flow (tile spinner->shimmer->gray) ===
 function archivePush(entry){
   cache.archive = cache.archive.filter(x => x.activityId !== entry.activityId);
   cache.archive.unshift(entry);
@@ -260,7 +250,7 @@ async function onSubmit(ev){
   }
 }
 
-// === Events ===
+// Events
 document.addEventListener('click', (e)=>{
   const t = e.target;
   if(t && t.id==='idLoginBtn'){ goToPin('login'); }
@@ -269,39 +259,39 @@ document.addEventListener('click', (e)=>{
   if(t && t.id==='backToIdBtn'){ showAuthId(); }
   if(t && t.id==='logoutBtn'){ store.clear(); location.reload(); }
   if(t && t.id==='archiveToggle'){
-    const p = $('#archivePanel'); const btn=t;
+    const p = document.querySelector('#archivePanel'); const btn=t;
     const open = p.hasAttribute('hidden') ? false : true;
     if(open){ p.setAttribute('hidden',''); btn.setAttribute('aria-expanded','false'); }
     else { p.removeAttribute('hidden'); btn.setAttribute('aria-expanded','true'); }
   }
   if(t && (t.id==='archiveChip' || (t.closest && t.closest('#archiveChip')))){
-    const p = $('#archivePanel'); const btn=$('#archiveToggle');
+    const p = document.querySelector('#archivePanel'); const btn=document.querySelector('#archiveToggle');
     if(p.hasAttribute('hidden')){ p.removeAttribute('hidden'); btn && btn.setAttribute('aria-expanded','true'); p.scrollIntoView({behavior:'smooth', block:'start'}); }
     else { p.scrollIntoView({behavior:'smooth', block:'start'}); }
   }
 }, { passive:true });
 
-// === Boot ===
+// Boot
 (async function boot(){
-  try{
-    const y = $('#year'); if(y) y.textContent = new Date().getFullYear();
-    const buildEl = $('#build'); if(buildEl) buildEl.textContent = (window.ASSET_VERSION||'dev');
-    document.documentElement.classList.toggle('light', localStorage.getItem('cc.theme')==='light');
+  const y = document.querySelector('#year'); if(y) y.textContent = new Date().getFullYear();
+  const buildEl = document.querySelector('#build'); if(buildEl) buildEl.textContent = (window.ASSET_VERSION||'dev');
+  document.documentElement.classList.toggle('light', localStorage.getItem('cc.theme')==='light');
 
-    // Default state
-    if(!document.body.getAttribute('data-state')) document.body.setAttribute('data-state','auth-id');
+  if(!document.body.getAttribute('data-state')) document.body.setAttribute('data-state','auth-id');
 
-    // Always fetch preview leaderboard
-    jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb = lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
+  // Preview leaderboard on auth screen
+  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb = lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
 
-    const uid = store.uid(); const pin = store.pin();
-    loadArchive(); renderArchive(); renderArchiveChip();
+  const uid = store.uid(); const pin = store.pin();
+  loadArchive(); renderArchive(); renderArchiveChip();
 
-    if(uid && pin){
+  if(uid && pin){
+    busy(true, 'Loading your dashboard…');
+    try{
       await precacheFor(uid);
-      renderDash(); // already waited for data, so lb shows
+      renderDash();
+    } finally {
+      busy(false);
     }
-  }catch(e){
-    console.error('Boot error', e);
   }
 })();
