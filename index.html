@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="style.css?v=uc20" />
 </head>
 <body data-state="identify">
+  <script src="config.js"></script>
+
   <!-- Auth + Dashboard layout assumed unchanged from v19.1.5r -->
   <div id="app">
     <div class="auth-layout grid two">
@@ -34,7 +36,10 @@
   </div>
 
   <!-- Order: config.js, core app.js, then avatar patch & plugin (cache-busted) -->
-  <script src="config.js"></script>
+  
+  
+  
+  
   <script src="app.js?v=uc20"></script>
   <script src="app-avatar-patch.js?v=uc20"></script>
   <script src="plugins/avatarPicker.js?v=uc20"></script>
