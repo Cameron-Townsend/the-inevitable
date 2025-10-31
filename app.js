@@ -1,4 +1,4 @@
-// Classroom Challenge — app v19 (hide completed tiles across reload; archive only)
+// Classroom Challenge — app v19 + Phase 1/2A (avatar picker mount + visible avatars)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
@@ -64,15 +64,57 @@ function loadDoneFromStorage(){ try{ const arr = JSON.parse(localStorage.getItem
 function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
 
 // Renderers
-function renderProfile(p){ $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId); $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0); }
+function renderProfile(p){
+  const nameEl = $('#displayName');
+  const balEl  = $('#coinBalance');
+  if(nameEl) nameEl.textContent = p.displayName || p.userId;
+  if(balEl)  balEl.textContent  = p.balance ?? 0;
+
+  // New: avatar image in profile
+  const img = $('#profileAvatar');
+  if (img) {
+    const src = p.avatarURL || 'avatars/happy-face.png';
+    img.src = src;
+    img.alt = (p.avatarId ? `${p.avatarId} avatar` : 'Avatar');
+  }
+}
+
 function renderLeaderboard(rows){
   const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — 🪙 ${r.score}`; ol.appendChild(li); });
+  (rows||[]).forEach((r,i)=>{
+    const li=document.createElement('li');
+    li.style.display='flex'; li.style.alignItems='center'; li.style.gap='10px';
+
+    // small avatar (if present)
+    if (r.avatarURL) {
+      const img = document.createElement('img');
+      img.src = r.avatarURL;
+      img.alt = (r.avatarId ? `${r.avatarId} avatar` : 'Avatar');
+      img.loading = 'lazy';
+      img.style.width='24px'; img.style.height='24px'; img.style.borderRadius='50%';
+      img.style.objectFit='cover'; img.style.border='1px solid rgba(255,255,255,.16)';
+      img.onerror = ()=>{ img.onerror=null; img.src='avatars/happy-face.png'; };
+      li.appendChild(img);
+    }
+
+    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    const txt=document.createElement('span');
+    txt.textContent=`${m} ${r.name} — 🪙 ${r.score}`;
+    li.appendChild(txt);
+    ol.appendChild(li);
+  });
 }
+
 function renderLeaderboardPreview(rows){
   const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).slice(0,8).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — ${r.score}`; ol.appendChild(li); });
+  (rows||[]).slice(0,8).forEach((r,i)=>{
+    const li=document.createElement('li');
+    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    li.textContent=`${m} ${r.name} — ${r.score}`;
+    ol.appendChild(li);
+  });
 }
+
 function renderActivities(list, doneSet){
   const wrap=$('#activities'); if(!wrap) return; wrap.innerHTML='';
   const hide = cache.hideCompleted !== false;
@@ -93,6 +135,7 @@ function renderActivities(list, doneSet){
   });
   wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit, { passive:true }));
 }
+
 function renderArchive(){
   const ul = $('#archiveList'); if(!ul) return; ul.innerHTML='';
   if(!cache.archive.length){ ul.innerHTML = '<li class="muted">No previous activities yet.</li>'; return; }
@@ -152,7 +195,16 @@ async function precacheFor(uid){
     // Fallback to previously stored done set
     loadDoneFromStorage();
   }
-  if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
+  if(prof.ok){
+    cache.profile = {
+      userId: uid,
+      balance: prof.balance,
+      displayName: prof.displayName,
+      avatarId: prof.avatarId || '',
+      avatarURL: prof.avatarURL || ''
+    };
+    try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
+  }
   loadArchive(); renderArchive();
 }
 
@@ -164,25 +216,27 @@ function renderDash(){
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
-  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
 
-  // 🔹 AvatarPicker (non-breaking, optional)
-  try {
-    const mount = document.querySelector('#avatarPickerMount');
-    if (window.AvatarPicker && mount && cache.profile) {
-      AvatarPicker({
-        apiBase: WEB_APP_URL,
-        user: cache.profile,
-        onChanged: (url,id)=>{
-          cache.profile.avatarURL = url;
-          cache.profile.avatarId  = id;
-          renderProfile(cache.profile);
-        }
-      }).mount(mount);
-    }
-  } catch(err) {
-    console.warn('AvatarPicker init failed:', err);
+  // Phase 1/2: mount avatar picker (safe, only if present)
+  const mount = document.getElementById('avatarPickerMount');
+  if (mount && window.AvatarPicker && cache.profile && cache.profile.userId) {
+    const picker = new window.AvatarPicker({
+      apiBase: WEB_APP_URL,
+      user: { userId: cache.profile.userId, avatarId: cache.profile.avatarId, avatarURL: cache.profile.avatarURL },
+      onChanged: (url, id) => {
+        // Update profile image instantly
+        if (cache.profile) { cache.profile.avatarURL = url || ''; cache.profile.avatarId = id || ''; }
+        const img = document.getElementById('profileAvatar');
+        if (img) img.src = url || 'avatars/happy-face.png';
+      }
+    });
+    picker.mount(mount);
   }
+
+  // Keep LB fresh
+  jget({action:'leaderboard'}).then(lb=>{
+    if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); }
+  }).catch(()=>{});
 }
 
 // Auth flow

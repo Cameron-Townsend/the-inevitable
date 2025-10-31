@@ -68,11 +68,22 @@
       <div class="grid two">
         <div class="card" id="profileCard">
           <h2>Profile 👤</h2>
-          <p><strong id="displayName">—</strong></p>
-          <p>Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
-          <!-- 🔹 New mount point for Avatar Picker -->
-          <div id="avatarPickerMount"></div>
-          <button id="logoutBtn" class="secondary">Logout</button>
+
+          <!-- New: visible avatar -->
+          <div class="row" style="align-items:center; gap:16px;">
+            <img id="profileAvatar" alt="Avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.16);" />
+            <div>
+              <p style="margin:0"><strong id="displayName">—</strong></p>
+              <p style="margin:4px 0 0 0;">Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
+            </div>
+          </div>
+
+          <!-- Avatar picker mount point (Phase 1) -->
+          <div id="avatarPickerMount" style="margin-top:12px;"></div>
+
+          <div class="actions" style="margin-top:12px;">
+            <button id="logoutBtn" class="secondary">Logout</button>
+          </div>
         </div>
         <div class="card" id="boardCard">
           <h2>Leaderboard 🏆</h2>
@@ -101,8 +112,8 @@
   <footer class="footer">© <span id="year"></span> • Classroom Challenge • Build <span id="build"></span></footer>
 
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=uc19"></script>
-  <!-- 🔹 New plugin include -->
+  <!-- Phase 1/2: plugin for avatar selection -->
   <script src="plugins/avatarPicker.js?v=1"></script>
+  <script src="app.js?v=uc19"></script>
 </body>
 </html>
