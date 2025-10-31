@@ -1,109 +1,94 @@
-// UMD-style Avatar Picker — window.AvatarPicker (stable, preload + fallback, URL normalize, single-mount)
-(function(global){
-  function AvatarPicker(opts){
-    const preload   = Array.isArray(opts.avatars) ? opts.avatars : null;
-    const apiBase   = (opts.apiBase || '').trim();
-    const user      = opts.user || {};
-    const onChanged = typeof opts.onChanged === 'function' ? opts.onChanged : function(){};
+(function(root, factory){
+  if(typeof define === 'function' && define.amd){
+    define([], factory);
+  }else if(typeof module === 'object' && module.exports){
+    module.exports = factory();
+  }else{
+    root.ClassroomPlugins = root.ClassroomPlugins || {};
+    root.ClassroomPlugins.avatarPicker = factory();
+  }
+}(typeof self !== 'undefined' ? self : this, function(){
+  'use strict';
 
-    let state = { avatars: [], selected: (user.avatarId || '').trim() };
-    const el = document.createElement('div');
-    el.className = 'avatar-picker';
+  function el(tag, attrs, children){
+    const e = document.createElement(tag);
+    if(attrs) Object.entries(attrs).forEach(([k,v]) => {
+      if(k === 'class') e.className = v;
+      else if(k === 'text') e.textContent = v;
+      else e.setAttribute(k, v);
+    });
+    (children||[]).forEach(c => e.appendChild(c));
+    return e;
+  }
 
-    function h(tag, cls, html){ const x=document.createElement(tag); if(cls) x.className=cls; if(html) x.innerHTML=html; return x; }
-    function norm(s){ return (s||'').toString().trim(); }
-    function normURL(u){
-      u = norm(u);
-      if (!u) return '';
-      if (u.startsWith('http://') || u.startsWith('https://') || u.startsWith('/')) return u;
-      // Treat bare filenames as /avatars/<filename>
-      return 'avatars/' + u;
+  async function fetchAvatars(){
+    try{
+      const base = (window.ClassroomConfig && window.ClassroomConfig.WEB_APP_URL) || '';
+      const url = base + (base.includes('?') ? '&' : '?') + 'fn=getavatars&_ts=' + Date.now();
+      const res = await fetch(url, { method: 'GET' });
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : (json.avatars || []);
+      return list.filter(a => a && a.avatarId && a.avatarURL);
+    }catch(e){
+      console.error('avatarPicker.getavatars failed', e);
+      return [];
     }
+  }
 
-    function render(){
-      el.innerHTML='';
-      const title = h('div','avatar-picker__title','Choose your avatar');
-      const grid  = h('div','avatar-picker__grid');
+  function safe(url){
+    try{
+      if(!url) return null;
+      const u = new URL(url, location.origin);
+      if(u.protocol === 'http:') u.protocol = 'https:';
+      u.searchParams.set('_ts', String(Date.now()));
+      return u.toString();
+    }catch(e){ return null; }
+  }
 
-      (state.avatars||[]).forEach(a=>{
-        const card = h('button','avatar-card'); card.type='button'; card.title=a.avatarId;
-        const img = new Image();
-        img.src = normURL(a.avatarURL);
-        img.alt = a.avatarId;
-        img.loading = 'lazy';
-        img.onerror = function(){ img.src='avatars/happy-face.png'; };
-        const cap = h('div','avatar-card__label', a.avatarId);
-        if (a.avatarId === state.selected) card.classList.add('is-selected');
-        card.appendChild(img);
-        card.appendChild(cap);
-        card.addEventListener('click', ()=> selectAvatar(a));
-        grid.appendChild(card);
+  function open(opts){
+    opts = opts || {};
+    return new Promise(async (resolve) => {
+      const modal = el('div', { class: 'modal open', id: 'avatarPickerModal' });
+      const sheet = el('div', { class: 'sheet' });
+      const title = el('h3', { text: 'Choose your avatar' });
+      const grid = el('div', { class: 'avatar-grid' });
+      const closeBtn = el('button', { class: 'btn small', text: 'Cancel', type: 'button' });
+
+      sheet.appendChild(title);
+      sheet.appendChild(grid);
+      sheet.appendChild(el('div', { }, [closeBtn]));
+      modal.appendChild(sheet);
+      document.body.appendChild(modal);
+
+      closeBtn.addEventListener('click', () => {
+        modal.remove();
+        resolve(null);
       });
 
-      el.appendChild(title); el.appendChild(grid);
-      return el;
-    }
-
-    async function fetchAvatars(){
-      if (preload) {
-        state.avatars = preload.map(a => ({ avatarId: norm(a.avatarId), avatarURL: normURL(a.avatarURL) }));
-        render();
-        return;
-      }
-      try{
-        const url = new URL(apiBase);
-        url.searchParams.set('action','getavatars');
-        const res = await fetch(url.toString(), { method:'GET' });
-        if(!res.ok) throw new Error('Failed avatars');
-        const json = await res.json();
-        const seen = new Set();
-        state.avatars = (json.avatars || [])
-          .map(a => ({ avatarId: norm(a.avatarId), avatarURL: normURL(a.avatarURL) }))
-          .filter(a => a.avatarId && a.avatarURL && !seen.has(a.avatarId) && seen.add(a.avatarId));
-        render();
-      }catch(e){
-        el.innerHTML = '<div class="avatar-picker__error">Error loading avatars.</div>';
-        console.warn(e);
-      }
-    }
-
-    async function selectAvatar(a){
-      state.selected = a.avatarId;
-      render(); // optimistic highlight
-      try{
-        const body = new URLSearchParams({ action:'setavatar', userId: user.userId || '', avatarId: a.avatarId });
-        const res = await fetch(apiBase, {
-          method:'POST',
-          headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
-          body
+      const avatars = await fetchAvatars();
+      avatars.forEach(a => {
+        const url = safe(a.avatarURL);
+        const cell = el('div', { class: 'cell', 'data-id': a.avatarId });
+        const img = el('img', { src: url || '', alt: a.avatarId });
+        const label = el('div', { class: 'caption', text: a.avatarId });
+        cell.appendChild(img);
+        cell.appendChild(label);
+        if(opts.current && opts.current === a.avatarId){
+          cell.style.outline = '2px solid #6cf';
+        }
+        cell.addEventListener('click', () => {
+          modal.remove();
+          resolve({ avatarId: a.avatarId, avatarURL: a.avatarURL });
         });
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error||'Avatar update failed');
+        grid.appendChild(cell);
+      });
 
-        // Prefer server URL; fallback to the tile’s URL if absent.
-        const finalURL = normURL(json.avatarURL || a.avatarURL);
-        user.avatarId = json.avatarId || a.avatarId;
-        user.avatarURL = finalURL;
-
-        // Notify host app (profile refresh, leaderboard refresh, etc.)
-        onChanged(user.avatarURL, user.avatarId);
-      }catch(e){
-        console.warn(e);
-      }
-    }
-
-    return {
-      async mount(container){
-        if (!container) return;
-        // Defensive: prevent duplicate mounts causing double grids.
-        if (container.__avatarPickerMounted) return;
-        container.__avatarPickerMounted = true;
-
-        container.innerHTML='';
-        container.appendChild(render());
-        await fetchAvatars();
-      }
-    };
+      // click outside to close
+      modal.addEventListener('click', (e) => {
+        if(e.target === modal){ modal.remove(); resolve(null); }
+      });
+    });
   }
-  global.AvatarPicker = AvatarPicker;
-})(window);
+
+  return { open };
+}));
