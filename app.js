@@ -1,10 +1,21 @@
-// Classroom Challenge — app v19 + Phase 1/2A (avatar picker mount + visible avatars)
+// Classroom Challenge — app v19 (hide completed tiles across reload; archive only)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
 const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities', subs:'cc.subs', lb:'cc.lb', gm:'cc.grading', arch:'cc.archive' };
 const $  = (s,root=document)=> root.querySelector(s);
 const $$ = (s,root=document)=> Array.from(root.querySelectorAll(s));
+
+// --- Avatar utilities ---
+function isAbsUrl(u){ return /^https?:\/\//i.test(u||''); }
+function isRooted(u){ return /^\//.test(u||''); }
+function safeAvatar(u){
+  const v = (u||'').toString().trim();
+  if (!v) return '/avatars/happy-face.png';
+  if (isAbsUrl(v) || isRooted(v)) return v;
+  // bare filename like "ghost.png"
+  return '/avatars/' + v.replace(/^\/+/,''); 
+}
 
 // Busy (auth-only)
 const Busy = (()=> {
@@ -66,16 +77,25 @@ function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cac
 // Renderers
 function renderProfile(p){
   const nameEl = $('#displayName');
-  const balEl  = $('#coinBalance');
-  if(nameEl) nameEl.textContent = p.displayName || p.userId;
-  if(balEl)  balEl.textContent  = p.balance ?? 0;
+  if(nameEl) nameEl.textContent = p.displayName||p.userId;
+  const balEl = $('#coinBalance');
+  if(balEl) balEl.textContent = p.balance??0;
 
-  // New: avatar image in profile
-  const img = $('#profileAvatar');
-  if (img) {
-    const src = p.avatarURL || 'avatars/happy-face.png';
-    img.src = src;
-    img.alt = (p.avatarId ? `${p.avatarId} avatar` : 'Avatar');
+  // Avatar image injected before display name
+  const nameWrap = nameEl ? nameEl.parentElement : null;
+  let img = $('#avatarImg');
+  if(!img && nameWrap){
+    img = document.createElement('img');
+    img.id = 'avatarImg';
+    img.alt = 'avatar';
+    img.className = 'avatar-img';
+    // Place before the <strong id="displayName">
+    nameWrap.insertBefore(img, nameEl);
+  }
+  if(img){
+    const src = safeAvatar(p.avatarURL||'');
+    if (img.getAttribute('src') !== src) img.src = src;
+    img.onerror = ()=>{ img.onerror=null; img.src = '/avatars/happy-face.png'; };
   }
 }
 
@@ -83,36 +103,27 @@ function renderLeaderboard(rows){
   const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
   (rows||[]).forEach((r,i)=>{
     const li=document.createElement('li');
-    li.style.display='flex'; li.style.alignItems='center'; li.style.gap='10px';
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
 
-    // small avatar (if present)
-    if (r.avatarURL) {
-      const img = document.createElement('img');
-      img.src = r.avatarURL;
-      img.alt = (r.avatarId ? `${r.avatarId} avatar` : 'Avatar');
-      img.loading = 'lazy';
-      img.style.width='24px'; img.style.height='24px'; img.style.borderRadius='50%';
-      img.style.objectFit='cover'; img.style.border='1px solid rgba(255,255,255,.16)';
-      img.onerror = ()=>{ img.onerror=null; img.src='avatars/happy-face.png'; };
-      li.appendChild(img);
+    // avatar (optional)
+    if (r.avatarURL){
+      const im = document.createElement('img');
+      im.className='lb-ava';
+      im.alt='';
+      im.src = safeAvatar(r.avatarURL);
+      im.onerror = ()=>{ im.remove(); };
+      li.appendChild(im);
+      li.appendChild(document.createTextNode(' '));
     }
 
-    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
-    const txt=document.createElement('span');
-    txt.textContent=`${m} ${r.name} — 🪙 ${r.score}`;
-    li.appendChild(txt);
+    li.appendChild(document.createTextNode(`${medal} ${r.name} — 🪙 ${r.score}`));
     ol.appendChild(li);
   });
 }
 
 function renderLeaderboardPreview(rows){
   const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).slice(0,8).forEach((r,i)=>{
-    const li=document.createElement('li');
-    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
-    li.textContent=`${m} ${r.name} — ${r.score}`;
-    ol.appendChild(li);
-  });
+  (rows||[]).slice(0,8).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — ${r.score}`; ol.appendChild(li); });
 }
 
 function renderActivities(list, doneSet){
@@ -195,16 +206,7 @@ async function precacheFor(uid){
     // Fallback to previously stored done set
     loadDoneFromStorage();
   }
-  if(prof.ok){
-    cache.profile = {
-      userId: uid,
-      balance: prof.balance,
-      displayName: prof.displayName,
-      avatarId: prof.avatarId || '',
-      avatarURL: prof.avatarURL || ''
-    };
-    try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
-  }
+  if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName, avatarURL: prof.avatarURL||'', avatarId: prof.avatarId||'' }; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
   loadArchive(); renderArchive();
 }
 
@@ -216,27 +218,40 @@ function renderDash(){
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
+  mountAvatarPicker(); // NEW: mount once now that profile exists
+  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
+}
 
-  // Phase 1/2: mount avatar picker (safe, only if present)
-  const mount = document.getElementById('avatarPickerMount');
-  if (mount && window.AvatarPicker && cache.profile && cache.profile.userId) {
-    const picker = new window.AvatarPicker({
-      apiBase: WEB_APP_URL,
-      user: { userId: cache.profile.userId, avatarId: cache.profile.avatarId, avatarURL: cache.profile.avatarURL },
-      onChanged: (url, id) => {
-        // Update profile image instantly
-        if (cache.profile) { cache.profile.avatarURL = url || ''; cache.profile.avatarId = id || ''; }
-        const img = document.getElementById('profileAvatar');
-        if (img) img.src = url || 'avatars/happy-face.png';
-      }
-    });
-    picker.mount(mount);
-  }
+// Helper to refresh profile + leaderboard after avatar change
+async function refreshProfileAndBoard(uid){
+  try{
+    const prof = await jget({action:'getprofile', userId:uid});
+    if(prof.ok){
+      cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName||uid, avatarURL: prof.avatarURL||'', avatarId: prof.avatarId||'' };
+      renderProfile(cache.profile);
+    }
+    const lb = await jget({action:'leaderboard'});
+    if(lb.ok){ cache.lb = lb.leaderboard; renderLeaderboard(cache.lb); }
+  }catch{}
+}
 
-  // Keep LB fresh
-  jget({action:'leaderboard'}).then(lb=>{
-    if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); }
-  }).catch(()=>{});
+// AvatarPicker mount (id="avatarPicker" in Profile card)
+function mountAvatarPicker(){
+  const root = document.getElementById('avatarPicker');
+  if(!root || root.dataset.mounted) return;
+  if(!window.AvatarPicker || !cache.profile?.userId) return;
+  const picker = window.AvatarPicker({
+    apiBase: WEB_APP_URL,
+    user: { userId: cache.profile.userId, avatarId: cache.profile.avatarId||'', avatarURL: cache.profile.avatarURL||'' },
+    onChanged: (url, id)=>{
+      cache.profile.avatarURL = url||'';
+      cache.profile.avatarId = id||'';
+      renderProfile(cache.profile);
+      refreshProfileAndBoard(cache.profile.userId);
+    }
+  });
+  picker.mount(root);
+  root.dataset.mounted = '1';
 }
 
 // Auth flow
