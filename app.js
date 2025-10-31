@@ -165,6 +165,24 @@ function renderDash(){
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
+
+  // 🔹 AvatarPicker (non-breaking, optional)
+  try {
+    const mount = document.querySelector('#avatarPickerMount');
+    if (window.AvatarPicker && mount && cache.profile) {
+      AvatarPicker({
+        apiBase: WEB_APP_URL,
+        user: cache.profile,
+        onChanged: (url,id)=>{
+          cache.profile.avatarURL = url;
+          cache.profile.avatarId  = id;
+          renderProfile(cache.profile);
+        }
+      }).mount(mount);
+    }
+  } catch(err) {
+    console.warn('AvatarPicker init failed:', err);
+  }
 }
 
 // Auth flow

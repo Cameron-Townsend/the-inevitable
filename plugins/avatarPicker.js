@@ -48,10 +48,11 @@
     async function selectAvatar(a){
       state.selected = a.avatarId; render(); // optimistic UI
       try{
+        const form = new URLSearchParams({ action:'setavatar', userId: user.userId, avatarId: a.avatarId });
         const res = await fetch(apiBase, {
           method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'setavatar', userId: user.userId, avatarId: a.avatarId })
+          headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+          body: form
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error||'Avatar update failed');
