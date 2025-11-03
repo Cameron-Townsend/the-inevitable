@@ -324,3 +324,82 @@ body[data-state="app"] #dashboard{ display:block; }
   background:rgba(0,0,0,.8); color:#fff; padding:10px 14px; border-radius:10px; box-shadow:var(--shadow);
   z-index:10000;
 }
+
+/* ============================
+   Avatar UI (v19.1.6 plan)
+   ============================ */
+
+/* row in Profile card: avatar + name side-by-side */
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+/* main avatar in profile */
+.avatar-img {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255,255,255,.05);
+  border: 2px solid rgba(255,255,255,.12);
+}
+
+/* tiny version (for leaderboard later) */
+.avatar-img.sm {
+  width: 30px;
+  height: 30px;
+  border-width: 1px;
+}
+
+/* the container in index.html we added:
+   <div id="avatarPickerPanel" class="avatar-picker hidden">...</div> */
+.avatar-picker {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 10px;
+  max-width: 380px;          /* prevents panel from stretching the card */
+  max-height: 220px;
+  overflow-y: auto;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+/* individual avatar tile */
+.avatar-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border-radius: 10px;
+  padding: 4px;
+  transition: background .15s ease;
+}
+.avatar-tile:hover {
+  background: rgba(255,255,255,.05);
+}
+
+.avatar-tile img {
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+/* selected state */
+.avatar-tile.selected {
+  outline: 2px solid var(--accent);
+  background: rgba(127,90,240,.12);
+}
+
+/* we already have .hidden in your sheet; we’ll reuse it */
+/* .hidden { display:none!important; } */
+
