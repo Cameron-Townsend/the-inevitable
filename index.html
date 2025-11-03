@@ -68,8 +68,21 @@
       <div class="grid two">
         <div class="card" id="profileCard">
           <h2>Profile 👤</h2>
-          <p><strong id="displayName">—</strong></p>
+
+          <!-- avatar + name row (added) -->
+          <div class="profile-row">
+            <img id="profileAvatar" class="avatar-img" alt="Avatar" />
+            <strong id="displayName">—</strong>
+          </div>
+
           <p>Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
+
+          <!-- choose avatar trigger (added) -->
+          <button id="chooseAvatarBtn" class="secondary" type="button">Choose Avatar</button>
+
+          <!-- avatar picker panel (hidden by default; added) -->
+          <div id="avatarPickerPanel" class="avatar-picker hidden" aria-label="Choose an avatar"></div>
+
           <button id="logoutBtn" class="secondary">Logout</button>
         </div>
         <div class="card" id="boardCard">
@@ -98,7 +111,11 @@
   <div id="toast" class="toast hidden"></div>
   <footer class="footer">© <span id="year"></span> • Classroom Challenge • Build <span id="build"></span></footer>
 
+  <!-- scripts -->
   <script src="config.js?v=2"></script>
   <script src="app.js?v=uc19"></script>
+  <!-- avatar extension scripts (to be added in later steps) -->
+  <script src="app-avatar-patch.js?v=uc19"></script>
+  <script src="plugins/avatarPicker.js?v=uc19"></script>
 </body>
 </html>
