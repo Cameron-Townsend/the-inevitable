@@ -57,21 +57,46 @@ function showAuthPin(){ setState('auth-pin'); }
 function showApp(){ setState('app'); }
 
 // Cache
-const cache = { acts:null, lb:null, gm:null, profile:null, done:new Set(), authMode:'login', archive:[] , hideCompleted:true};
+const cache = {
+  acts:null,
+  lb:null,
+  gm:null,
+  profile:null,
+  done:new Set(),
+  authMode:'login',
+  archive:[],
+  hideCompleted:true,
+  avatars:null           // <-- added for avatar precache
+};
+
 function loadArchive(){ try{ cache.archive = JSON.parse(localStorage.getItem(K.arch)||'[]'); }catch{ cache.archive=[]; } }
 function saveArchive(){ try{ localStorage.setItem(K.arch, JSON.stringify(cache.archive)); }catch{} }
 function loadDoneFromStorage(){ try{ const arr = JSON.parse(localStorage.getItem(K.subs)||'[]'); cache.done = new Set(arr); }catch{ cache.done = new Set(); } }
 function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
 
 // Renderers
-function renderProfile(p){ $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId); $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0); }
+function renderProfile(p){
+  $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId);
+  $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0);
+  // we do NOT force avatar here; a separate patch file will read window.__profile
+}
 function renderLeaderboard(rows){
   const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — 🪙 ${r.score}`; ol.appendChild(li); });
+  (rows||[]).forEach((r,i)=>{
+    const li=document.createElement('li');
+    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    li.textContent=`${m} ${r.name} — 🪙 ${r.score}`;
+    ol.appendChild(li);
+  });
 }
 function renderLeaderboardPreview(rows){
   const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).slice(0,8).forEach((r,i)=>{ const li=document.createElement('li'); const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅'; li.textContent=`${m} ${r.name} — ${r.score}`; ol.appendChild(li); });
+  (rows||[]).slice(0,8).forEach((r,i)=>{
+    const li=document.createElement('li');
+    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    li.textContent=`${m} ${r.name} — ${r.score}`;
+    ol.appendChild(li);
+  });
 }
 function renderActivities(list, doneSet){
   const wrap=$('#activities'); if(!wrap) return; wrap.innerHTML='';
@@ -133,15 +158,55 @@ function showTileToast(tile, msg, kind='info'){
 let toastTimer=null;
 function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
+// Helper: pick random avatar from cache
+function pickRandomAvatar(){
+  const list = (cache.avatars && Array.isArray(cache.avatars)) ? cache.avatars : (cache.avatars && cache.avatars.avatars) ? cache.avatars.avatars : null;
+  if(!list || !list.length) return null;
+  const idx = Math.floor(Math.random() * list.length);
+  return list[idx];
+}
+
+// Ensure user has an avatar; if not, pick one and persist
+async function ensureAvatarFor(uid){
+  // if profile already has avatar, do nothing
+  if (cache.profile && (cache.profile.avatarId || cache.profile.avatarURL)) {
+    return;
+  }
+  const chosen = pickRandomAvatar();
+  if(!chosen) return;
+  try {
+    // persist avatar to backend
+    await jpost({ action:'setavatar', userId: uid, avatarId: chosen.avatarId });
+    // update local profile
+    cache.profile = cache.profile || { userId: uid, balance: 0 };
+    cache.profile.avatarId = chosen.avatarId;
+    cache.profile.avatarURL = chosen.avatarURL;
+    // expose globally so patch/plugin can refresh
+    window.__profile = cache.profile;
+  } catch (e) {
+    console.warn('Failed to set default avatar', e);
+  }
+}
+
 // Data fetching
 async function precacheFor(uid){
-  const [acts, lb, gm, subs, prof] = await Promise.all([
+  // add getavatars to the existing bundle
+  const [
+    acts,
+    lb,
+    gm,
+    subs,
+    prof,
+    avatars
+  ] = await Promise.all([
     jget({action:'getactivities'}),
     jget({action:'leaderboard'}),
     jget({action:'getgradingmap'}),
     uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
-    uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0})
+    uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0}),
+    jget({action:'getavatars'}).catch(()=>({ ok:false, avatars:[] }))
   ]);
+
   if(acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{} }
   if(lb.ok){   cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb)); }catch{} renderLeaderboardPreview(cache.lb); }
   if(gm.ok){   cache.gm   = gm; try{ localStorage.setItem(K.gm,   JSON.stringify(gm)); }catch{} }
@@ -152,8 +217,25 @@ async function precacheFor(uid){
     // Fallback to previously stored done set
     loadDoneFromStorage();
   }
-  if(prof.ok){ cache.profile = { userId:uid, balance:prof.balance, displayName:prof.displayName }; try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{} }
-  loadArchive(); renderArchive();
+  if(prof.ok){
+    cache.profile = {
+      userId: uid,
+      balance: prof.balance,
+      displayName: prof.displayName
+    };
+    try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
+  }
+  // store avatars
+  if(avatars && (avatars.ok || Array.isArray(avatars))){
+    cache.avatars = avatars.avatars || avatars.list || avatars;
+  }
+
+  // expose to window for avatar plugin / patch
+  window.__profile = cache.profile || { userId: uid };
+  window.__avatars = cache.avatars || [];
+
+  loadArchive();
+  renderArchive();
 }
 
 function renderDash(){
@@ -164,7 +246,17 @@ function renderDash(){
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
-  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboard(lb.leaderboard); } }).catch(()=>{});
+
+  // also re-expose after render
+  window.__profile = cache.profile;
+  window.__avatars = cache.avatars || [];
+
+  jget({action:'leaderboard'}).then(lb=>{
+    if(lb.ok){
+      cache.lb=lb.leaderboard;
+      renderLeaderboard(lb.leaderboard);
+    }
+  }).catch(()=>{});
 }
 
 // Auth flow
@@ -177,7 +269,10 @@ async function goToPin(mode){
   const primaryBtn = $('#primaryAuthBtn'); if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
   try{
     Busy.show('Checking ID…');
-    if(!cache.lb){ const lb = await jget({action:'leaderboard'}); if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); } }
+    if(!cache.lb){
+      const lb = await jget({action:'leaderboard'});
+      if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); }
+    }
     const check = await jget({action:'checkuser', userId:uid});
     const exists = check.ok && check.exists;
     const name = exists ? (check.displayName||uid) : uid;
@@ -188,6 +283,8 @@ async function goToPin(mode){
         : `Create your account, ${name}`;
     }
     if(mode==='login' && !exists){ cache.authMode='register'; if(primaryBtn) primaryBtn.textContent='Register'; }
+
+    // start precache early here (this is your "instant" requirement)
     precacheFor(uid).catch(()=>{});
   } catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
@@ -208,10 +305,19 @@ async function onPrimaryAuth(){
     }
     const lg=await jpost({ action:'login', userId:uid, pin });
     if(!lg.ok) throw new Error(lg.error||'Login failed');
+
     store.set(uid, pin, remember); setMsg('#loginMsg','');
+
+    // refresh all data
     await precacheFor(uid);
+
+    // ensure profile name from login response
     cache.profile = cache.profile || { userId:uid, balance:0 };
     cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
+
+    // ensure avatar if missing
+    await ensureAvatarFor(uid);
+
     renderDash();
   } catch(e){
     setMsg('#loginMsg', e.message||'Auth error');
@@ -265,7 +371,7 @@ async function onSubmit(ev){
 
   setTimeout(()=>{ addClasses(tile,'moving'); tile.style.order='999'; }, TOAST_MS);
 
-  // Submit to server
+  // Client/server submit
   const SHIMMER_TOTAL = 700 + 600;
   setTimeout(()=> addClasses(tile,'done'), SHIMMER_TOTAL);
 
@@ -277,7 +383,15 @@ async function onSubmit(ev){
 
     const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
     cache.archive = cache.archive.filter(x => x.activityId !== id);
-    cache.archive.unshift({ activityId:id, title: act.title || id, points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0), correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)), answer, correctAnswer: act.correctAnswer || null, timestamp: new Date().toISOString() });
+    cache.archive.unshift({
+      activityId:id,
+      title: act.title || id,
+      points: res.pointsAwarded ?? (verdict==='success'? (act.points||0) : 0),
+      correct: (res.correct !== undefined ? res.correct : (verdict==='success'?true: verdict==='fail'?false:null)),
+      answer,
+      correctAnswer: act.correctAnswer || null,
+      timestamp: new Date().toISOString()
+    });
     saveArchive(); renderArchive();
 
     setTimeout(()=>{
@@ -324,7 +438,7 @@ async function boot(){
 
   // Load preview and local caches early
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
-  loadDoneFromStorage(); // ensure we know completed IDs before first render
+  loadDoneFromStorage();
   loadArchive(); renderArchive();
 
   const uid=store.uid(), pin=store.pin();
@@ -332,6 +446,7 @@ async function boot(){
     Busy.show('Loading your dashboard…');
     try{
       await precacheFor(uid);
+      await ensureAvatarFor(uid);     // ensure avatar on auto-login too
       renderDash();
     } finally { Busy.hide(); }
   }
