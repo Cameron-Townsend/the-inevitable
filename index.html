@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Classroom Challenge</title>
+  <script>window.ASSET_VERSION='2025-10-30.v19';</script>
+  <link rel="stylesheet" href="style.css?v=uc20" />
+</head>
+<body data-state="auth-id">
+  <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">🌓</button>
+
+  <!-- Global Busy Overlay (auth-only) -->
+  <div id="busyOverlay" class="busy-overlay hidden" aria-live="polite" aria-atomic="true">
+    <div class="busy-box">
+      <div class="spinner"></div>
+      <div class="busy-text">Processing…</div>
+    </div>
+  </div>
+
+  <main>
+    <!-- Auth layout -->
+    <section id="authLayout" class="auth-layout cardless">
+      <div class="auth-left">
+        <section id="identifyPanel" class="card">
+          <h2>Welcome ✨</h2>
+          <div class="row">
+            <label>Student ID
+              <input id="idOnly" autocomplete="username" placeholder="e.g., Zork67">
+            </label>
+          </div>
+          <div class="actions">
+            <button id="idLoginBtn">Login</button>
+            <button id="idRegisterBtn" class="secondary">Register</button>
+          </div>
+          <p id="idMsg" class="msg"></p>
+        </section>
+
+        <section id="pinPanel" class="card">
+          <h2 id="helloName">Hi! 👋</h2>
+          <div class="row pin-row">
+            <div class="input-wrap">
+              <label>PIN
+                <input id="pin" type="password" autocomplete="current-password" placeholder="4–8 digits">
+              </label>
+            </div>
+            <label class="remember small"><input type="checkbox" id="rememberPin"> Remember PIN</label>
+          </div>
+          <div class="actions">
+            <button id="primaryAuthBtn">Login</button>
+            <button id="backToIdBtn" class="secondary">Back</button>
+          </div>
+          <p id="loginMsg" class="msg"></p>
+        </section>
+      </div>
+
+      <aside id="lbPreview" class="card lb-preview">
+        <h3>Leaderboard Preview 🏆</h3>
+        <ol id="leaderboardPreview" class="tight"></ol>
+      </aside>
+    </section>
+
+    <!-- App -->
+    <section id="dashboard" class="card">
+      <div class="grid two">
+        <div class="card" id="profileCard">
+          <h2>Profile 👤</h2>
+          <p><strong id="displayName">—</strong></p>
+          <p>Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
+          <button id="logoutBtn" class="secondary">Logout</button>
+        </div>
+        <div class="card" id="boardCard">
+          <h2>Leaderboard 🏆</h2>
+          <ol id="leaderboard"></ol>
+        </div>
+      </div>
+
+      <section class="card" id="activitiesCard">
+        <div class="section-head">
+          <h2>Activities 🧩</h2>
+        </div>
+        <div id="activities" class="activities"></div>
+      </section>
+
+      <!-- Archive Drawer -->
+      <section class="card archive">
+        <button id="archiveToggle" class="archive-toggle" aria-expanded="false">📂 Archive (Previous Activities)</button>
+        <div id="archivePanel" class="archive-panel" hidden>
+          <ul id="archiveList" class="archive-list"></ul>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <footer class="footer">© <span id="year"></span> • Classroom Challenge • Build <span id="build"></span></footer>
+
+  <script src="config.js?v=2"></script>
+  <script src="app.js?v=uc19"></script>
+</body>
+</html>
