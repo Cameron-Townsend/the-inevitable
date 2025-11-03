@@ -1,79 +1,39 @@
-
-/* --- v19.1.6d Avatar Consolidation Patch --- */
-.avatar-img {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
-  display: inline-block;
-  vertical-align: middle;
-  border: 2px solid var(--card-border, rgba(255,255,255,0.1));
-  background: var(--avatar-bg, #2c2c2c);
+:root {
+  --bg: #121212;
+  --fg: #fafafa;
+  --accent: #ffcc00;
 }
-.avatar-img.sm { width: 28px; height: 28px; border-width: 1px; }
-.avatar-img.lg { width: 64px; height: 64px; }
-
-.avatar-fallback {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: inline-flex;
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+.auth-layout, .dashboard {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  user-select: none;
-  background: linear-gradient(135deg, #7d5fff, #00d2d3);
-  color: white;
+  min-height: 100vh;
 }
-
-.leaderboard .row {
-  display: grid;
-  grid-template-columns: 40px 1fr auto;
-  gap: 10px;
-  align-items: center;
+.hidden { display: none; }
+button {
+  margin: 5px;
+  padding: 10px 20px;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 5px;
 }
-.leaderboard .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.modal {
+#toast {
   position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
   display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
 }
-.modal.open { display: flex; }
-.modal .sheet {
-  background: var(--card, #111);
-  color: var(--text, #eee);
-  border-radius: 12px;
-  padding: 16px;
-  width: min(720px, 92vw);
-  max-height: 80vh;
-  overflow: auto;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-}
-.avatar-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 12px;
-}
-.avatar-grid .cell {
-  display: grid;
-  gap: 8px;
-  justify-items: center;
-  padding: 10px;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 10px;
-  cursor: pointer;
-}
-.avatar-grid .cell:hover { outline: 2px solid rgba(255,255,255,0.2); }
-.avatar-grid img {
-  width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
-}
-.btn.small { font-size: 12px; padding: 6px 10px; }

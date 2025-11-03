@@ -1,47 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Classroom Challenge — v19.1.6d Patch</title>
-  <link rel="icon" href="favicon.ico" />
-  <link rel="stylesheet" href="style.css?v=uc20" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Classroom Challenge</title>
+  <link rel="stylesheet" href="style.css?v=uc19" />
 </head>
 <body data-state="identify">
-  <script src="config.js"></script>
-
-  <!-- Auth + Dashboard layout assumed unchanged from v19.1.5r -->
-  <div id="app">
-    <div class="auth-layout grid two">
-      <section id="authPanels">
-        <div id="identifyPanel" class="card">Identify</div>
-        <div id="pinPanel" class="card">PIN</div>
-      </section>
-      <section id="dashboard" class="card" hidden>
-        <header class="row between">
-          <div class="profile">
-            <img id="profileAvatar" class="avatar-img" alt="avatar" />
-            <span id="displayName"></span>
-            <button id="openAvatarPicker" class="btn small" type="button">Change Avatar</button>
-          </div>
-          <div class="coins">
-            <span id="coinBalance">0</span> 🪙
-          </div>
-        </header>
-        <div id="leaderboard"></div>
-        <div id="activities"></div>
-        <aside id="archive" class="archive"></aside>
-      </section>
-    </div>
+  <div id="identifyPanel" class="auth-layout">
+    <h1>Classroom Challenge</h1>
+    <input id="idOnly" placeholder="Enter ID" />
+    <button id="idLoginBtn">Login</button>
+    <button id="idRegisterBtn">Register</button>
   </div>
 
-  <!-- Order: config.js, core app.js, then avatar patch & plugin (cache-busted) -->
-  
-  
-  
-  
-  <script src="app.js?v=uc20"></script>
-  <script src="app-avatar-patch.js?v=uc20"></script>
-  <script src="plugins/avatarPicker.js?v=uc20"></script>
+  <div id="pinPanel" class="auth-layout hidden">
+    <input id="pin" placeholder="Enter PIN" />
+    <button id="primaryAuthBtn">Continue</button>
+    <button id="backToIdBtn">Back</button>
+  </div>
+
+  <div id="dashboard" class="dashboard hidden">
+    <header>
+      <span id="displayName"></span>
+      <span id="coinBalance"></span>
+      <button id="logoutBtn">Logout</button>
+    </header>
+    <section id="leaderboard"></section>
+    <section id="activities"></section>
+    <section id="archiveList" class="hidden"></section>
+    <button id="archiveToggle">Archive</button>
+    <div id="toast"></div>
+    <div id="busyOverlay" class="hidden"></div>
+  </div>
+
+  <footer>
+    <p>&copy; <span id="year"></span> Classroom Challenge v19.1.5r</p>
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="app.js?v=uc19"></script>
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
 </body>
 </html>
