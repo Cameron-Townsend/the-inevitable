@@ -7,24 +7,39 @@ const $  = (s,root=document)=> root.querySelector(s);
 const $$ = (s,root=document)=> Array.from(root.querySelectorAll(s));
 
 // Busy (auth-only)
-const Busy = (()=> {
-  let count=0, timer=null;
+// Busy (auth-only) — async-aware, with minimum display time
+const Busy = (() => {
+  let busySince = 0;
+  let lingerMs = 800;
+
   const el = () => $('#busyOverlay');
-  function show(text){
-    const e=el(); if(!e) return;
-    if(text){ const t=e.querySelector('.busy-text'); if(t) t.textContent=text; }
-    count = Math.max(0,count)+1;
+
+  async function show(text, minMs = 800) {
+    const e = el();
+    if (!e) return;
+    busySince = Date.now();
+    lingerMs = minMs;
+    if (text) {
+      const t = e.querySelector('.busy-text');
+      if (t) t.textContent = text;
+    }
     e.classList.remove('hidden');
-    clearTimeout(timer);
-    timer = setTimeout(()=>{ count=0; e.classList.add('hidden'); timer=null; }, 10000);
   }
-  function hide(){
-    const e=el(); if(!e) return;
-    count = Math.max(0, count-1);
-    if(count===0){ e.classList.add('hidden'); clearTimeout(timer); timer=null; }
+
+  async function hide(force = false) {
+    const e = el();
+    if (!e) return;
+    const elapsed = Date.now() - busySince;
+    if (!force && elapsed < lingerMs) {
+      const wait = lingerMs - elapsed;
+      await new Promise(res => setTimeout(res, wait));
+    }
+    e.classList.add('hidden');
   }
+
   return { show, hide };
 })();
+
 
 // Storage
 const store = {
@@ -310,9 +325,12 @@ async function goToPin(mode){
 
     // start precache early here (this is your "instant" requirement)
     precacheFor(uid).catch(()=>{});
-  } catch(e){
+    } catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
-  } finally { Busy.hide(); }
+  } finally {
+    await Busy.hide();
+  }
+
 }
 
 async function onPrimaryAuth(){
@@ -508,12 +526,15 @@ async function boot(){
 
   const uid=store.uid(), pin=store.pin();
   if(uid && pin){
-    Busy.show('Loading your dashboard…');
-    try{
+        await Busy.show('Loading your dashboard…');
+    try {
       await precacheFor(uid);
-      await ensureAvatarFor(uid);     // ensure avatar on auto-login too
+      await ensureAvatarFor(uid);
       renderDash();
-    } finally { Busy.hide(); }
+    } finally {
+      await Busy.hide();
+    }
+
   }
 }
 
