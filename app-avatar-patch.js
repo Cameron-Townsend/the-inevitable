@@ -9,8 +9,12 @@
   const panelId = 'avatarPickerPanel';
   const imgId = 'profileAvatar';
 
-  // small busy overlay for just the profile card
-  function withProfileBusy(message) {
+  // NEW: use global panel-scoped busy if available, otherwise fall back to legacy profile-busy
+  function startProfileBusy(message) {
+    if (window.CCPanelBusy) {
+      window.CCPanelBusy.show('profile');
+      return () => window.CCPanelBusy.hide('profile');
+    }
     const card = document.getElementById('profileCard');
     if (!card) return () => {};
     let ov = card.querySelector('.profile-busy');
@@ -41,6 +45,7 @@
   function getProfile() {
     return window.__profile || null;
   }
+
   function getAvatars() {
     // we normalized this in app.js
     return (window.__avatars && Array.isArray(window.__avatars))
@@ -75,7 +80,6 @@
       img.src = url;
       img.alt = prof.displayName || prof.userId || 'Avatar';
     } else {
-      // fallback: emoji-style circle
       img.removeAttribute('src');
       img.alt = 'Avatar';
     }
@@ -84,23 +88,21 @@
   function renderLeaderboardAvatars() {
     const prof = getProfile();
     if (!prof || !prof.userId) return;
-    const meId = prof.userId;
     const rows = document.querySelectorAll('#leaderboard li .lb-row, #leaderboard li div.lb-row');
     rows.forEach(row => {
+      if (!row.classList.contains('me')) return;
       const nameEl = row.querySelector('.lb-name');
-      const isMe = row.classList.contains('me');
-      if (!isMe) return;
-      // ensure avatar is updated
-      const img = row.querySelector('img.avatar-img');
+      const currentImg = row.querySelector('img.avatar-img');
       if (prof.avatarURL) {
-        if (!img) {
+        const finalUrl = safeAvatarUrl(prof.avatarURL);
+        if (!currentImg) {
           const pic = document.createElement('img');
           pic.className = 'avatar-img sm';
-          pic.src = safeAvatarUrl(prof.avatarURL);
+          pic.src = finalUrl;
           pic.alt = prof.displayName || prof.userId || 'Avatar';
           row.insertBefore(pic, nameEl || row.firstChild);
         } else {
-          img.src = safeAvatarUrl(prof.avatarURL);
+          currentImg.src = finalUrl;
         }
       }
     });
@@ -114,51 +116,56 @@
     btn.addEventListener('click', async () => {
       const panel = document.getElementById(panelId);
 
-      // NEW: toggle behavior — second click hides the panel if still open
+      // toggle behavior — second click hides the panel if open
       if (panel && !panel.classList.contains('hidden')) {
         panel.classList.add('hidden');
         return;
       }
 
-      // lazy-fill panel from plugin
       const current = (getProfile() && (getProfile().avatarId || getProfile().avatarID)) || null;
 
       // if the plugin exists, let it render; otherwise inline-render
       if (window.ClassroomPlugins && window.ClassroomPlugins.avatarPicker) {
-        const choice = await window.ClassroomPlugins.avatarPicker.open({
-          current,
-          avatars: getAvatars()
-        });
-        if (choice && choice.avatarId) {
-          const prof = getProfile() || {};
-          const done = withProfileBusy('Updating avatar…');
-          try {
-            await persistAvatar(prof.userId, choice.avatarId);
-            // update global profile so app.js and other code see it
-            window.__profile = Object.assign({}, prof, {
-              avatarId: choice.avatarId,
-              avatarURL: choice.avatarURL
-            });
-            renderProfileAvatar();
-            renderLeaderboardAvatars();
-            if (window.showToast) window.showToast('Avatar updated ✅');
-          } catch (e) {
-            if (window.showToast) window.showToast('Could not update avatar ❌');
-          } finally {
-            done();
+        // show panel busy while we open/fetch
+        const stop = startProfileBusy('Loading avatars…');
+        try {
+          const choice = await window.ClassroomPlugins.avatarPicker.open({
+            current,
+            avatars: getAvatars()
+          });
+          if (choice && choice.avatarId) {
+            const prof = getProfile() || {};
+            const stop2 = startProfileBusy('Updating avatar…');
+            try {
+              await persistAvatar(prof.userId, choice.avatarId);
+              // update global profile so app.js and other code see it
+              window.__profile = Object.assign({}, prof, {
+                avatarId: choice.avatarId,
+                avatarURL: choice.avatarURL
+              });
+              renderProfileAvatar();
+              renderLeaderboardAvatars();
+              if (window.showToast) window.showToast('Avatar updated ✅');
+            } catch (e) {
+              if (window.showToast) window.showToast('Could not update avatar ❌');
+            } finally {
+              stop2();
+            }
           }
+        } finally {
+          stop();
         }
       } else {
         // fallback: basic inline render
         panel.innerHTML = '';
         const list = getAvatars();
         list.forEach(av => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.textContent = av.avatarId;
-          btn.addEventListener('click', async () => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = av.avatarId;
+          b.addEventListener('click', async () => {
             const prof = getProfile() || {};
-            const done = withProfileBusy('Updating avatar…');
+            const stop = startProfileBusy('Updating avatar…');
             try {
               await persistAvatar(prof.userId, av.avatarId);
               window.__profile = Object.assign({}, prof, {
@@ -167,12 +174,15 @@
               });
               renderProfileAvatar();
               renderLeaderboardAvatars();
+              if (window.showToast) window.showToast('Avatar updated ✅');
+            } catch (e) {
+              if (window.showToast) window.showToast('Could not update avatar ❌');
             } finally {
-              done();
+              stop();
             }
             panel.classList.add('hidden');
           });
-          panel.appendChild(btn);
+          panel.appendChild(b);
         });
         panel.classList.remove('hidden');
       }
