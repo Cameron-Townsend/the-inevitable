@@ -48,23 +48,34 @@
 
   // update leaderboard with tiny avatar next to each name, if profile data includes avatar
   function renderLeaderboardAvatars() {
-    const prof = getProfile();
-    if (!prof || !(prof.avatarURL || prof.avatarUrl || prof.avatarId)) return;
-    const url = safeAvatarUrl(prof.avatarURL || prof.avatarUrl);
-    if (!url) return;
+  const prof = getProfile();
+  if (!prof) return;
+  const lb = document.getElementById('leaderboard');
+  if (!lb) return;
 
-    const lb = document.getElementById('leaderboard');
-    if (!lb) return;
-    lb.querySelectorAll('li').forEach(li => {
-      // we can't be sure of list structure, so prepend img
-      if (li.querySelector('.avatar-img')) return;
-      const img = document.createElement('img');
-      img.className = 'avatar-img sm';
-      img.src = url;
-      img.alt = 'Avatar';
-      li.prepend(img);
-    });
-  }
+  // find the <li> that belongs to this user and only update that one
+  const items = lb.querySelectorAll('li');
+  items.forEach(li => {
+    const text = li.textContent || '';
+    // try to match either displayName or userId
+    if (prof.displayName && text.includes(prof.displayName)) {
+      // only update this one
+      const url = safeAvatarUrl(prof.avatarURL || prof.avatarUrl);
+      if (!url) return;
+      // if there's already an img.sm in here, update it
+      const existing = li.querySelector('img.avatar-img.sm');
+      if (existing) {
+        existing.src = url;
+      } else {
+        const img = document.createElement('img');
+        img.className = 'avatar-img sm';
+        img.src = url;
+        img.alt = 'Avatar';
+        li.insertBefore(img, li.firstChild);
+      }
+    }
+  });
+}
 
   async function persistAvatar(userId, avatarId) {
     if (!BASE || !userId || !avatarId) return;
