@@ -55,6 +55,30 @@ body[data-state="auth-pin"] #authPinView {
 body[data-state="app"] #dashboard {
   display: block;
 }
+/* restore dashboard/panel spacing from earlier build */
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+#dashboard > .card {
+  margin-bottom: 1.25rem;
+}
+
+.card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.02);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+}
+
+/* auth panels */
+#authIdView .card,
+#authPinView .card {
+  max-width: 900px;
+  margin: 0 auto 1.5rem;
+}
 
 /* Busy overlay */
 #busyOverlay {
