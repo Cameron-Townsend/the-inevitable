@@ -67,8 +67,8 @@
     <section id="dashboard">
       <!-- top row: 2-column layout -->
       <div class="grid two">
-        <!-- PROFILE CARD (patched) -->
-        <div class="card" id="profileCard">
+        <!-- PROFILE CARD (panel-scoped busy) -->
+        <div class="card cc-panel" id="profileCard" data-panel="profile">
           <h2>Profile 👤</h2>
 
           <!-- avatar + name + coins -->
@@ -90,34 +90,46 @@
           <button id="logoutBtn" class="secondary" type="button" style="margin-top: 0.75rem;">
             Logout
           </button>
+
+          <!-- panel busy overlay -->
+          <div class="panel-busy-overlay" aria-hidden="true"></div>
         </div>
 
-        <!-- LEADERBOARD CARD -->
-        <div class="card" id="boardCard">
+        <!-- LEADERBOARD CARD (panel-scoped busy) -->
+        <div class="card cc-panel" id="boardCard" data-panel="leaderboard">
           <div class="lb-header">
             <h2>Leaderboard 🏆</h2>
             <button id="lbToggle" class="secondary small" type="button">Show all</button>
           </div>
           <ol id="leaderboard"></ol>
+
+          <!-- panel busy overlay -->
+          <div class="panel-busy-overlay" aria-hidden="true"></div>
         </div>
       </div>
 
-      <!-- full-width activities -->
-      <section class="card" id="activitiesCard">
+      <!-- full-width activities (panel-scoped busy) -->
+      <section class="card cc-panel" id="activitiesCard" data-panel="activities">
         <div class="section-head">
           <h2>Activities 🧩</h2>
         </div>
         <div id="activities" class="activities"></div>
+
+        <!-- panel busy overlay -->
+        <div class="panel-busy-overlay" aria-hidden="true"></div>
       </section>
 
-      <!-- Archive Drawer (full-width) -->
-      <section class="card archive">
+      <!-- Archive Drawer (panel-scoped busy) -->
+      <section class="card archive cc-panel" data-panel="archive">
         <button id="archiveToggle" class="archive-toggle" aria-expanded="false">
           📂 Archive (Previous Activities)
         </button>
         <div id="archivePanel" class="archive-panel" hidden>
           <ul id="archiveList" class="archive-list"></ul>
         </div>
+
+        <!-- panel busy overlay -->
+        <div class="panel-busy-overlay" aria-hidden="true"></div>
       </section>
     </section>
   </main>
