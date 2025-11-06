@@ -67,14 +67,31 @@
    <section id="dashboard">
   <!-- top row: 2-column layout -->
   <div class="grid two">
-    <div class="card" id="profileCard">
-      <h2>Profile 👤</h2>
+   <!-- Profile card -->
+<div class="card" id="profileCard">
+  <h2>Profile 👤</h2>
 
-      <!-- avatar + name row (added) -->
-      <div class="profile-row">
-        <img id="profileAvatar" class="avatar-img" alt="Avatar" />
-        <strong id="displayName">—</strong>
-      </div>
+  <!-- avatar + name row -->
+  <div class="profile-row">
+    <img id="profileAvatar" class="avatar-img" alt="Avatar" />
+    <div>
+      <div id="displayName">—</div>
+      <div>Coins: 🪙 <span id="coinBalance">0</span></div>
+    </div>
+  </div>
+
+  <!-- choose avatar trigger -->
+  <button id="chooseAvatarBtn" type="button" class="secondary">Choose Avatar</button>
+
+  <!-- avatar picker panel (hidden by default; shown by app-avatar-patch.js) -->
+  <div id="avatarPickerPanel" class="avatar-picker hidden"></div>
+
+  <!-- logout button (your app.js already wires #logoutBtn) -->
+  <button id="logoutBtn" type="button" class="secondary" style="margin-top: 0.75rem;">
+    Logout
+  </button>
+</div>
+
 
       <p>Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
 
@@ -99,7 +116,7 @@
     <div id="activities" class="activities"></div>
   </section>
 
-  <!-- Archive Drawer (full-width) -->
+ <!-- Archive Drawer (full-width) -->
   <section class="card archive">
     <button id="archiveToggle" class="archive-toggle" aria-expanded="false">📂 Archive (Previous Activities)</button>
     <div id="archivePanel" class="archive-panel" hidden>
