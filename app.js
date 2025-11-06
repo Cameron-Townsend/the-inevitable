@@ -1,4 +1,4 @@
-// Classroom Challenge — app v19.1.7 (panel-scoped busy + cache-first + staggered loads)
+// Classroom Challenge — app v19.1.7b (panel-scoped busy + cache-first + staggered loads + avatar-preserving profile)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
@@ -179,7 +179,7 @@ function loadProfileFromStorage(){
 function renderProfile(p){
   $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId);
   $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0);
-  // avatar is rendered via patch/plugin using window.__profile
+  // avatar is rendered by app-avatar-patch.js using window.__profile
 }
 
 function renderLeaderboard(rows, opts = {}){
@@ -320,7 +320,6 @@ async function ensureAvatarFor(uid){
   if (cache.profile && (cache.profile.avatarId || cache.profile.avatarURL)) {
     return;
   }
-  // we removed avatars from precache; this now only runs if avatars are already present
   if (!cache.avatars || !Array.isArray(cache.avatars) || cache.avatars.length === 0) {
     return;
   }
@@ -345,9 +344,8 @@ async function ensureAvatarFor(uid){
  * Fetch only the core data needed to make the dashboard meaningful.
  * - activities
  * - grading map
- * - submissions (to hide done tiles)
- * - profile
- * NOTE: leaderboard + avatars will be fetched later/staggered.
+ * - submissions
+ * - profile (now preserved with avatar fields!)
  */
 async function precacheCore(uid){
   CCPanelBusy.show('profile');
@@ -382,10 +380,13 @@ async function precacheCore(uid){
     }
 
     if(prof.ok){
+      // PRESERVE avatarId + avatarURL from backend
       cache.profile = {
         userId: uid,
         balance: prof.balance,
-        displayName: prof.displayName
+        displayName: prof.displayName,
+        avatarId: prof.avatarId,
+        avatarURL: prof.avatarURL
       };
       try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
       saveTimestamp('profile');
@@ -405,11 +406,9 @@ async function precacheCore(uid){
 /**
  * Secondary fetches that can happen a bit later:
  * - leaderboard
- * (we no longer fetch avatars here: avatar code will fetch on demand)
  */
 function scheduleSecondaryFetches(){
   setTimeout(async () => {
-    // leaderboard
     CCPanelBusy.show('leaderboard');
     try {
       const lb = await jget({action:'leaderboard'});
@@ -425,7 +424,7 @@ function scheduleSecondaryFetches(){
     } finally {
       CCPanelBusy.hide('leaderboard');
     }
-  }, 250); // small delay so UI can breathe
+  }, 250);
 }
 
 /* =========================
@@ -437,7 +436,7 @@ function renderDash(){
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
-  renderLeaderboard(cache.lb||[]);  // if we only had cached LB, this shows immediately
+  renderLeaderboard(cache.lb||[]);
 
   window.__profile = cache.profile;
   window.__avatars = cache.avatars || [];
@@ -455,10 +454,14 @@ async function goToPin(mode){
   const primaryBtn = $('#primaryAuthBtn'); if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
   try{
     Busy.show('Checking ID…');
-    // Only fetch leaderboard if we don't have a fresh one
     if(!cache.lb && shouldRefresh('leaderboard', 5*60*1000)){
       const lb = await jget({action:'leaderboard'});
-      if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{}; saveTimestamp('leaderboard'); }
+      if(lb.ok){
+        cache.lb=lb.leaderboard;
+        renderLeaderboardPreview(cache.lb);
+        try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{};
+        saveTimestamp('leaderboard');
+      }
     } else if (cache.lb) {
       renderLeaderboardPreview(cache.lb);
     }
@@ -473,8 +476,6 @@ async function goToPin(mode){
         : `Create your account, ${name}`;
     }
     if(mode==='login' && !exists){ cache.authMode='register'; if(primaryBtn) primaryBtn.textContent='Register'; }
-
-    // we no longer precache everything here — we do it after real login
   } catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
   } finally {
@@ -505,16 +506,16 @@ async function onPrimaryAuth(){
     store.set(uid, pin, remember);
     setMsg('#loginMsg','');
 
-    // store minimal profile so renderDash can work immediately
+    // PRESERVE avatar from login response too
     cache.profile = cache.profile || { userId: uid, balance: 0 };
     cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
+    cache.profile.avatarId = lg.avatarId || cache.profile.avatarId;
+    cache.profile.avatarURL = lg.avatarURL || cache.profile.avatarURL;
     try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
     saveTimestamp('profile');
 
-    // render quickly from whatever we have
     renderDash();
 
-    // now fetch core data & schedule secondary
     try {
       await precacheCore(uid);
       renderDash();
@@ -579,15 +580,17 @@ async function onSubmit(ev){
     const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
     if(!res.ok) throw new Error(res.error||'Submit failed');
 
-    // panel-scoped busy for profile + leaderboard refresh
     CCPanelBusy.show('profile');
     CCPanelBusy.show('leaderboard');
 
+    // refresh profile from backend (now also keeps avatar fields!)
     const prof = await jget({action:'getprofile', userId:uid});
     if(prof.ok && $('#coinBalance')) {
       $('#coinBalance').textContent = prof.balance;
       cache.profile = cache.profile || { userId: uid };
       cache.profile.balance = prof.balance;
+      cache.profile.avatarId = prof.avatarId;
+      cache.profile.avatarURL = prof.avatarURL;
       try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
       saveTimestamp('profile');
     }
@@ -713,7 +716,6 @@ async function boot(){
   document.documentElement.classList.toggle('light', theme==='light');
   const tt = $('#themeToggle'); if(tt){ tt.onclick = ()=>{ const light = !document.documentElement.classList.contains('light'); document.documentElement.classList.toggle('light', light); localStorage.setItem('cc.theme', light?'light':'dark'); }; }
 
-  // Load local cache versions to enable instant render
   loadActivitiesFromStorage();
   loadLeaderboardFromStorage();
   loadProfileFromStorage();
@@ -721,17 +723,14 @@ async function boot(){
   loadArchive();
   renderArchive();
 
-  // Get leaderboard preview from cache if available
   if (cache.lb) {
     renderLeaderboardPreview(cache.lb);
   } else if (shouldRefresh('leaderboard', 5*60*1000)) {
-    // light fetch for login screen only
     jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{}; saveTimestamp('leaderboard'); } }).catch(()=>{});
   }
 
   const uid=store.uid(), pin=store.pin();
   if(uid && pin){
-    // fast path: render what we have, then hydrate
     showApp();
     renderDash();
 
@@ -740,7 +739,6 @@ async function boot(){
       await precacheCore(uid);
       renderDash();
       scheduleSecondaryFetches();
-      // try default avatar assignment IF avatars appear later
       await ensureAvatarFor(uid);
     } finally {
       await Busy.hide();
