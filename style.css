@@ -178,6 +178,19 @@ body[data-state="app"] #dashboard{ display:block; }
 .grid.two{ display:grid; grid-template-columns:1fr 1fr; gap:var(--s3); }
 @media (max-width:1000px){ .grid.two{ grid-template-columns:1fr; } }
 
+#dashboard {
+  display: block;
+  gap: 0;
+}
+
+#dashboard > .grid.two {
+  margin-bottom: var(--s3);
+}
+
+#dashboard > .card {
+  margin-bottom: var(--s3);
+}
+
 /* Profile / Leaderboard cards inside dashboard */
 #profileCard p, #boardCard ol{ margin: .25rem 0; }
 
