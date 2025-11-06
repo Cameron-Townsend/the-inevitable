@@ -1,16 +1,28 @@
-// Classroom Challenge — app v19 (hide completed tiles across reload; archive only)
+// Classroom Challenge — app v19.1.7 (panel-scoped busy + cache-first + staggered loads)
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
-const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities', subs:'cc.subs', lb:'cc.lb', gm:'cc.grading', arch:'cc.archive' };
+const K = {
+  uid:'cc.uid',
+  pin:'cc.pin',
+  prof:'cc.profile',
+  acts:'cc.activities',
+  subs:'cc.subs',
+  lb:'cc.lb',
+  gm:'cc.grading',
+  arch:'cc.archive',
+  ts:'cc.ts' // timestamps for cache freshness
+};
+
 const $  = (s,root=document)=> root.querySelector(s);
 const $$ = (s,root=document)=> Array.from(root.querySelectorAll(s));
 
-// Busy (auth-only) — async-aware, with minimum display time
+/* =========================
+   Global Busy (auth-only)
+   ========================= */
 const Busy = (() => {
   let busySince = 0;
   let lingerMs = 800;
-
   const el = () => $('#busyOverlay');
 
   async function show(text, minMs = 800) {
@@ -39,7 +51,9 @@ const Busy = (() => {
   return { show, hide };
 })();
 
-// Panel-scoped busy overlay (global, future-ready)
+/* =========================
+   Panel-scoped Busy (global)
+   ========================= */
 window.CCPanelBusy = {
   show(panelName) {
     if (!panelName) return;
@@ -53,7 +67,9 @@ window.CCPanelBusy = {
   }
 };
 
-// Storage
+/* =========================
+   Storage helpers
+   ========================= */
 const store = {
   set(uid, pin, remember){
     localStorage.setItem(K.uid, uid);
@@ -65,25 +81,21 @@ const store = {
     localStorage.removeItem(K.pin);
     sessionStorage.removeItem(K.pin);
     localStorage.removeItem(K.arch);
+    localStorage.removeItem(K.ts);
   },
   uid(){ return localStorage.getItem(K.uid); },
   pin(){ return sessionStorage.getItem(K.pin) || localStorage.getItem(K.pin); }
 };
 
-// Net
+/* =========================
+   Network helpers
+   ========================= */
 const jget  = p    => fetch(WEB_APP_URL + '?' + new URLSearchParams(p), { method:'GET'  }).then(r=>r.json());
 const jpost = body => fetch(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:new URLSearchParams(body) }).then(r=>r.json());
 
-// State/UI helpers
-function setState(s){ document.body.setAttribute('data-state', s); const tt = $('#themeToggle'); if (tt) tt.classList.toggle('hidden', s==='app'); }
-const setMsg = (sel, m) => { const el=$(sel); if(el) el.textContent = m||''; };
-const norm = s => (s||'').toString().trim().toLowerCase();
-async function sha256Hex(str){ const enc=new TextEncoder(); const buf=await crypto.subtle.digest('SHA-256', enc.encode(str)); return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join(''); }
-function showAuthId(){ setState('auth-id'); }
-function showAuthPin(){ setState('auth-pin'); }
-function showApp(){ setState('app'); }
-
-// Cache
+/* =========================
+   State / Cache
+   ========================= */
 const cache = {
   acts:null,
   lb:null,
@@ -94,15 +106,76 @@ const cache = {
   archive:[],
   hideCompleted:true,
   avatars:null,
-  showFullLB:false
+  showFullLB:false,
+  timestamps:{} // in-memory timestamps
 };
 
-function loadArchive(){ try{ cache.archive = JSON.parse(localStorage.getItem(K.arch)||'[]'); }catch{ cache.archive=[]; } }
-function saveArchive(){ try{ localStorage.setItem(K.arch, JSON.stringify(cache.archive)); }catch{} }
-function loadDoneFromStorage(){ try{ const arr = JSON.parse(localStorage.getItem(K.subs)||'[]'); cache.done = new Set(arr); }catch{ cache.done = new Set(); } }
-function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{} }
+function loadTimestamps(){
+  try {
+    cache.timestamps = JSON.parse(localStorage.getItem(K.ts) || '{}');
+  } catch {
+    cache.timestamps = {};
+  }
+}
+function saveTimestamp(key){
+  cache.timestamps[key] = Date.now();
+  try {
+    localStorage.setItem(K.ts, JSON.stringify(cache.timestamps));
+  } catch {}
+}
+function shouldRefresh(key, ttlMs){
+  const ts = cache.timestamps[key];
+  if (!ts) return true;
+  return (Date.now() - ts) > ttlMs;
+}
 
-// Renderers
+/* =========================
+   UI helpers
+   ========================= */
+function setState(s){
+  document.body.setAttribute('data-state', s);
+  const tt = $('#themeToggle');
+  if (tt) tt.classList.toggle('hidden', s==='app');
+}
+const setMsg = (sel, m) => { const el=$(sel); if(el) el.textContent = m||''; };
+const norm = s => (s||'').toString().trim().toLowerCase();
+async function sha256Hex(str){
+  const enc=new TextEncoder();
+  const buf=await crypto.subtle.digest('SHA-256', enc.encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join('');
+}
+function showAuthId(){ setState('auth-id'); }
+function showAuthPin(){ setState('auth-pin'); }
+function showApp(){ setState('app'); }
+
+/* =========================
+   Cache loaders
+   ========================= */
+function loadArchive(){
+  try{ cache.archive = JSON.parse(localStorage.getItem(K.arch)||'[]'); }catch{ cache.archive=[]; }
+}
+function saveArchive(){
+  try{ localStorage.setItem(K.arch, JSON.stringify(cache.archive)); }catch{}
+}
+function loadDoneFromStorage(){
+  try{ const arr = JSON.parse(localStorage.getItem(K.subs)||'[]'); cache.done = new Set(arr); }catch{ cache.done = new Set(); }
+}
+function persistDone(){
+  try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{}
+}
+function loadActivitiesFromStorage(){
+  try { cache.acts = JSON.parse(localStorage.getItem(K.acts) || 'null'); } catch { cache.acts = null; }
+}
+function loadLeaderboardFromStorage(){
+  try { cache.lb = JSON.parse(localStorage.getItem(K.lb) || 'null'); } catch { cache.lb = null; }
+}
+function loadProfileFromStorage(){
+  try { cache.profile = JSON.parse(localStorage.getItem(K.prof) || 'null'); } catch { cache.profile = null; }
+}
+
+/* =========================
+   Renderers
+   ========================= */
 function renderProfile(p){
   $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId);
   $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0);
@@ -216,7 +289,7 @@ function renderArchive(){
   }));
 }
 
-// Tile toast helper
+// Tile toast
 function showTileToast(tile, msg, kind='info'){
   if(!tile) return;
   const div = document.createElement('div');
@@ -228,9 +301,14 @@ function showTileToast(tile, msg, kind='info'){
 
 // Global toast
 let toastTimer=null;
-function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
+function showToast(msg, kind=''){
+  const t=$('#toast'); if(!t) return;
+  t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400);
+}
 
-// Helper: pick random avatar from cache
+// Helper: pick random avatar from cache (still available for defaulting)
 function pickRandomAvatar(){
   const list = (cache.avatars && Array.isArray(cache.avatars)) ? cache.avatars : (cache.avatars && cache.avatars.avatars) ? cache.avatars.avatars : null;
   if(!list || !list.length) return null;
@@ -238,9 +316,12 @@ function pickRandomAvatar(){
   return list[idx];
 }
 
-// Ensure user has an avatar; if not, pick one and persist
 async function ensureAvatarFor(uid){
   if (cache.profile && (cache.profile.avatarId || cache.profile.avatarURL)) {
+    return;
+  }
+  // we removed avatars from precache; this now only runs if avatars are already present
+  if (!cache.avatars || !Array.isArray(cache.avatars) || cache.avatars.length === 0) {
     return;
   }
   const chosen = pickRandomAvatar();
@@ -256,49 +337,50 @@ async function ensureAvatarFor(uid){
   }
 }
 
-// Data fetching (panel-scoped busy for all main panels)
-async function precacheFor(uid){
+/* =========================
+   Data fetching (optimized)
+   ========================= */
+
+/**
+ * Fetch only the core data needed to make the dashboard meaningful.
+ * - activities
+ * - grading map
+ * - submissions (to hide done tiles)
+ * - profile
+ * NOTE: leaderboard + avatars will be fetched later/staggered.
+ */
+async function precacheCore(uid){
   CCPanelBusy.show('profile');
-  CCPanelBusy.show('leaderboard');
   CCPanelBusy.show('activities');
   CCPanelBusy.show('archive');
-
   try {
-    const [
-      acts,
-      lb,
-      gm,
-      subs,
-      prof,
-      avatars
-    ] = await Promise.all([
+    const [acts, gm, subs, prof] = await Promise.all([
       jget({action:'getactivities'}),
-      jget({action:'leaderboard'}),
       jget({action:'getgradingmap'}),
       uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
-      uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0}),
-      jget({action:'getavatars'}).catch(()=>({ ok:false, avatars:[] }))
+      uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0})
     ]);
 
     if(acts.ok){
       cache.acts = acts.activities;
       try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{}
+      saveTimestamp('activities');
     }
-    if(lb.ok){
-      cache.lb   = lb.leaderboard;
-      try{ localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }catch{}
-      renderLeaderboardPreview(cache.lb);
-    }
+
     if(gm.ok){
-      cache.gm   = gm;
+      cache.gm = gm;
       try{ localStorage.setItem(K.gm, JSON.stringify(gm)); }catch{}
+      saveTimestamp('grading');
     }
+
     if(subs.ok){
       cache.done = new Set((subs.submissions||[]).map(s=>s.activityId));
       try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{}
+      saveTimestamp('submissions');
     } else {
       loadDoneFromStorage();
     }
+
     if(prof.ok){
       cache.profile = {
         userId: uid,
@@ -306,48 +388,64 @@ async function precacheFor(uid){
         displayName: prof.displayName
       };
       try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
-    }
-    if(avatars && (avatars.ok || Array.isArray(avatars))){
-      cache.avatars = avatars.avatars || avatars.list || avatars;
+      saveTimestamp('profile');
     }
 
     window.__profile = cache.profile || { userId: uid };
-    window.__avatars = cache.avatars || [];
 
     loadArchive();
     renderArchive();
   } finally {
     CCPanelBusy.hide('profile');
-    CCPanelBusy.hide('leaderboard');
     CCPanelBusy.hide('activities');
     CCPanelBusy.hide('archive');
   }
 }
 
+/**
+ * Secondary fetches that can happen a bit later:
+ * - leaderboard
+ * (we no longer fetch avatars here: avatar code will fetch on demand)
+ */
+function scheduleSecondaryFetches(){
+  setTimeout(async () => {
+    // leaderboard
+    CCPanelBusy.show('leaderboard');
+    try {
+      const lb = await jget({action:'leaderboard'});
+      if(lb.ok){
+        cache.lb = lb.leaderboard;
+        try{ localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }catch{}
+        saveTimestamp('leaderboard');
+        renderLeaderboard(lb.leaderboard);
+        renderLeaderboardPreview(lb.leaderboard);
+      }
+    } catch (e) {
+      console.warn('leaderboard refresh failed', e);
+    } finally {
+      CCPanelBusy.hide('leaderboard');
+    }
+  }, 250); // small delay so UI can breathe
+}
+
+/* =========================
+   Render Dash (uses cache)
+   ========================= */
 function renderDash(){
   showApp();
   if (!cache.done || cache.done.size===0) loadDoneFromStorage();
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
-  renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
+  renderLeaderboard(cache.lb||[]);  // if we only had cached LB, this shows immediately
 
   window.__profile = cache.profile;
   window.__avatars = cache.avatars || [];
-
-  // background refresh of leaderboard but panel-scoped
-  CCPanelBusy.show('leaderboard');
-  jget({action:'leaderboard'}).then(lb=>{
-    if(lb.ok){
-      cache.lb=lb.leaderboard;
-      renderLeaderboard(lb.leaderboard);
-    }
-  }).catch(()=>{}).finally(()=>{
-    CCPanelBusy.hide('leaderboard');
-  });
 }
 
-// Auth flow
+/* =========================
+   Auth flow
+   ========================= */
 async function goToPin(mode){
   cache.authMode = mode;
   const uid = $('#idOnly')?.value.trim();
@@ -357,10 +455,14 @@ async function goToPin(mode){
   const primaryBtn = $('#primaryAuthBtn'); if(primaryBtn) primaryBtn.textContent = (mode==='login'?'Login':'Register');
   try{
     Busy.show('Checking ID…');
-    if(!cache.lb){
+    // Only fetch leaderboard if we don't have a fresh one
+    if(!cache.lb && shouldRefresh('leaderboard', 5*60*1000)){
       const lb = await jget({action:'leaderboard'});
-      if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); }
+      if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(cache.lb); try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{}; saveTimestamp('leaderboard'); }
+    } else if (cache.lb) {
+      renderLeaderboardPreview(cache.lb);
     }
+
     const check = await jget({action:'checkuser', userId:uid});
     const exists = check.ok && check.exists;
     const name = exists ? (check.displayName||uid) : uid;
@@ -372,8 +474,7 @@ async function goToPin(mode){
     }
     if(mode==='login' && !exists){ cache.authMode='register'; if(primaryBtn) primaryBtn.textContent='Register'; }
 
-    // start precache early (no panel overlays here — still in auth context)
-    precacheFor(uid).catch(()=>{});
+    // we no longer precache everything here — we do it after real login
   } catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
   } finally {
@@ -404,15 +505,20 @@ async function onPrimaryAuth(){
     store.set(uid, pin, remember);
     setMsg('#loginMsg','');
 
+    // store minimal profile so renderDash can work immediately
     cache.profile = cache.profile || { userId: uid, balance: 0 };
     cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
+    try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
+    saveTimestamp('profile');
 
+    // render quickly from whatever we have
     renderDash();
 
+    // now fetch core data & schedule secondary
     try {
-      await precacheFor(uid);
-      await ensureAvatarFor(uid);
+      await precacheCore(uid);
       renderDash();
+      scheduleSecondaryFetches();
     } catch (e) {
       console.warn('Background precache after auth failed:', e);
     }
@@ -425,7 +531,9 @@ async function onPrimaryAuth(){
   }
 }
 
-// Submit
+/* =========================
+   Submit flow
+   ========================= */
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
 function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
 function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
@@ -476,12 +584,20 @@ async function onSubmit(ev){
     CCPanelBusy.show('leaderboard');
 
     const prof = await jget({action:'getprofile', userId:uid});
-    if(prof.ok && $('#coinBalance')) $('#coinBalance').textContent = prof.balance;
+    if(prof.ok && $('#coinBalance')) {
+      $('#coinBalance').textContent = prof.balance;
+      cache.profile = cache.profile || { userId: uid };
+      cache.profile.balance = prof.balance;
+      try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
+      saveTimestamp('profile');
+    }
 
     const lb = await jget({action:'leaderboard'});
     if(lb.ok) {
       cache.lb = lb.leaderboard;
       renderLeaderboard(lb.leaderboard);
+      try{ localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }catch{}
+      saveTimestamp('leaderboard');
     }
 
     const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
@@ -515,7 +631,9 @@ async function onSubmit(ev){
   }
 }
 
-// Events
+/* =========================
+   Events
+   ========================= */
 function wireEvents(){
   const on = (sel, fn) => { const el=$(sel); if(el){ el.addEventListener('click', fn, { passive:true }); return true; } return false; };
   on('#idLoginBtn',     ()=>goToPin('login'));
@@ -543,7 +661,9 @@ function wireEvents(){
   }
 }
 
-// UNIVERSAL ENTER-KEY HANDLER
+/* =========================
+   Enter key handler
+   ========================= */
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
 
@@ -578,26 +698,50 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Boot
+/* =========================
+   Boot
+   ========================= */
 async function boot(){
   if(!document.body.getAttribute('data-state')) setState('auth-id');
   wireEvents();
+  loadTimestamps();
+
   const y=$('#year'); if(y) y.textContent=new Date().getFullYear();
   const build=$('#build'); if(build) build.textContent=(window.ASSET_VERSION||'dev');
-  const theme = localStorage.getItem('cc.theme'); document.documentElement.classList.toggle('light', theme==='light');
+
+  const theme = localStorage.getItem('cc.theme');
+  document.documentElement.classList.toggle('light', theme==='light');
   const tt = $('#themeToggle'); if(tt){ tt.onclick = ()=>{ const light = !document.documentElement.classList.contains('light'); document.documentElement.classList.toggle('light', light); localStorage.setItem('cc.theme', light?'light':'dark'); }; }
 
-  jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
+  // Load local cache versions to enable instant render
+  loadActivitiesFromStorage();
+  loadLeaderboardFromStorage();
+  loadProfileFromStorage();
   loadDoneFromStorage();
-  loadArchive(); renderArchive();
+  loadArchive();
+  renderArchive();
+
+  // Get leaderboard preview from cache if available
+  if (cache.lb) {
+    renderLeaderboardPreview(cache.lb);
+  } else if (shouldRefresh('leaderboard', 5*60*1000)) {
+    // light fetch for login screen only
+    jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{}; saveTimestamp('leaderboard'); } }).catch(()=>{});
+  }
 
   const uid=store.uid(), pin=store.pin();
   if(uid && pin){
+    // fast path: render what we have, then hydrate
+    showApp();
+    renderDash();
+
     await Busy.show('Loading your dashboard…');
     try {
-      await precacheFor(uid);
-      await ensureAvatarFor(uid);
+      await precacheCore(uid);
       renderDash();
+      scheduleSecondaryFetches();
+      // try default avatar assignment IF avatars appear later
+      await ensureAvatarFor(uid);
     } finally {
       await Busy.hide();
     }
