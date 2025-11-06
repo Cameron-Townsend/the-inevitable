@@ -64,59 +64,62 @@
     </section>
 
     <!-- App -->
-   <section id="dashboard">
-  <!-- top row: 2-column layout -->
-  <div class="grid two">
-   <!-- Profile card -->
-<div class="card" id="profileCard">
-  <h2>Profile 👤</h2>
+    <section id="dashboard">
+      <!-- top row: 2-column layout -->
+      <div class="grid two">
+        <!-- PROFILE CARD (patched) -->
+        <div class="card" id="profileCard">
+          <h2>Profile 👤</h2>
 
-  <!-- avatar + name row -->
-  <div class="profile-row">
-    <img id="profileAvatar" class="avatar-img" alt="Avatar" />
-    <div>
-      <div id="displayName">—</div>
-      <div>Coins: 🪙 <span id="coinBalance">0</span></div>
-    </div>
-  </div>
+          <!-- avatar + name + coins -->
+          <div class="profile-row">
+            <img id="profileAvatar" class="avatar-img" alt="Avatar" />
+            <div>
+              <div id="displayName">—</div>
+              <div>Coins: 🪙 <span id="coinBalance">0</span></div>
+            </div>
+          </div>
 
-  <!-- choose avatar trigger -->
-  <button id="chooseAvatarBtn" type="button" class="secondary">Choose Avatar</button>
+          <!-- choose avatar trigger -->
+          <button id="chooseAvatarBtn" class="secondary" type="button">Choose Avatar</button>
 
-  <!-- avatar picker panel (hidden by default; shown by app-avatar-patch.js) -->
-  <div id="avatarPickerPanel" class="avatar-picker hidden"></div>
+          <!-- avatar picker panel (hidden until button is used) -->
+          <div id="avatarPickerPanel" class="avatar-picker hidden"></div>
 
-  <!-- logout button (your app.js already wires #logoutBtn) -->
-  <button id="logoutBtn" type="button" class="secondary" style="margin-top: 0.75rem;">
-    Logout
-  </button>
-</div>
-    <div class="card" id="boardCard">
-      <div class="lb-header">
-        <h2>Leaderboard 🏆</h2>
-        <button id="lbToggle" class="secondary small" type="button">Show all</button>
+          <!-- logout button -->
+          <button id="logoutBtn" class="secondary" type="button" style="margin-top: 0.75rem;">
+            Logout
+          </button>
+        </div>
+
+        <!-- LEADERBOARD CARD -->
+        <div class="card" id="boardCard">
+          <div class="lb-header">
+            <h2>Leaderboard 🏆</h2>
+            <button id="lbToggle" class="secondary small" type="button">Show all</button>
+          </div>
+          <ol id="leaderboard"></ol>
+        </div>
       </div>
-      <ol id="leaderboard"></ol>
-    </div>
-  </div>
 
-  <!-- full-width activities -->
-  <section class="card" id="activitiesCard">
-    <div class="section-head">
-      <h2>Activities 🧩</h2>
-    </div>
-    <div id="activities" class="activities"></div>
-  </section>
+      <!-- full-width activities -->
+      <section class="card" id="activitiesCard">
+        <div class="section-head">
+          <h2>Activities 🧩</h2>
+        </div>
+        <div id="activities" class="activities"></div>
+      </section>
 
- <!-- Archive Drawer (full-width) -->
-  <section class="card archive">
-    <button id="archiveToggle" class="archive-toggle" aria-expanded="false">📂 Archive (Previous Activities)</button>
-    <div id="archivePanel" class="archive-panel" hidden>
-      <ul id="archiveList" class="archive-list"></ul>
-    </div>
-  </section>
-</section>
-
+      <!-- Archive Drawer (full-width) -->
+      <section class="card archive">
+        <button id="archiveToggle" class="archive-toggle" aria-expanded="false">
+          📂 Archive (Previous Activities)
+        </button>
+        <div id="archivePanel" class="archive-panel" hidden>
+          <ul id="archiveList" class="archive-list"></ul>
+        </div>
+      </section>
+    </section>
   </main>
 
   <div id="toast" class="toast hidden"></div>
@@ -125,7 +128,6 @@
   <!-- scripts -->
   <script src="config.js?v=2"></script>
   <script src="app.js?v=uc19"></script>
-  <!-- avatar extension scripts (to be added in later steps) -->
   <script src="app-avatar-patch.js?v=uc19"></script>
   <script src="plugins/avatarPicker.js?v=uc19"></script>
 </body>
