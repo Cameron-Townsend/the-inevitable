@@ -474,3 +474,10 @@ body[data-state="app"] #dashboard{ display:block; }
   border-radius: 999px;
 }
 
+/* dashboard leaderboard: remove native list numbers */
+#leaderboard {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
