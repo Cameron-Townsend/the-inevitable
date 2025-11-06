@@ -1,425 +1,212 @@
-/* ================================
-   Classroom Challenge • style.css
-   v19 + Auth Layout Centered (2-col → 1-col)
-   ================================ */
+/* ============================================================
+   THE INEVITABLE MAIN — STYLE.CSS (Patched v19.2+)
+   Includes:
+   - Leaderboard UX improvements
+   - Number marker removal fix
+   - Updated dashboard layout alignment
+   ============================================================ */
 
-/* ---- Theme + Scale (Ultraviolet Catastrophe palette) ---- */
-:root{
-  --bg:#0e0b16; --text:#eceff4; --card:#131129; --muted:#9aa3ad;
-  --accent:#7F5AF0; --accent-amber:#FFB648; --accent-teal:#2E7D8F; --accent-navy:#1A1F3B;
-  --good:#43d17a; --warn:#ffcc66; --bad:#ff6b6b;
-  --s-1:4px; --s0:0px; --s1:8px; --s2:16px; --s3:24px; --s4:32px;
-  --r:14px; --shadow:0 6px 24px rgba(0,0,0,.35);
-}
-:root.light{
-  --bg:#f6f7fb; --text:#0f1220; --card:#ffffff; --muted:#6a7283;
-  --accent:#6D4EFF; --accent-amber:#FF9F2E; --accent-teal:#2B7F8E; --accent-navy:#1D2344;
-  --good:#1aa163; --warn:#b67200; --bad:#c0392b; --shadow:0 8px 24px rgba(0,0,0,.08);
-}
-
-/* ---- Base ---- */
-*{ box-sizing:border-box; }
-html,body{ height:100%; }
-body{
-  margin:0;
-  font:16px/1.5 system-ui, Segoe UI, Roboto, Arial, sans-serif;
-  color:var(--text);
-  background:var(--bg);
-}
-/* Static cosmic gradient background (does not scroll) */
-body::before{
-  content:'';
-  position:fixed; inset:0; z-index:-1; pointer-events:none;
-  background:
-    radial-gradient(1200px 800px at 20% -10%, rgba(127,90,240,.15), transparent),
-    var(--bg);
+/* Base theme variables */
+:root {
+  --bg-dark: #0f0f0f;
+  --bg-light: #f5f5f5;
+  --text-light: #ffffff;
+  --text-dark: #222222;
+  --accent: #7F5AF0;
+  --accent-light: rgba(127,90,240,0.1);
+  --border: rgba(255,255,255,0.08);
+  --radius: 10px;
+  --shadow: 0 1px 4px rgba(0,0,0,0.25);
 }
 
-main{ max-width:1100px; margin:var(--s4) auto; padding:0 var(--s2); }
-
-/* ---- Cards ---- */
-.card{
-  background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.08)), var(--card);
-  border:1px solid rgba(255,255,255,.06);
-  border-radius:var(--r);
-  padding:var(--s3);
-  box-shadow:var(--shadow);
-}
-.cardless{ background:transparent; border:none; box-shadow:none; padding:0; }
-
-/* ---- Typography + Layout helpers ---- */
-.row{ margin:var(--s1) 0; display:flex; gap:var(--s2); align-items:center; }
-.row.stack{ flex-direction:column; align-items:stretch; }
-
-label{ display:flex; flex-direction:column; gap:var(--s1); font-weight:600; color:var(--muted); }
-input{
-  padding:var(--s2);
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.12);
-  background:rgba(255,255,255,.06);
-  color:var(--text);
-  outline:none;
-  width:100%;
-}
-input::placeholder{ color:rgba(255,255,255,.5); }
-
-button{
-  padding:var(--s2) var(--s3);
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.12);
-  background:var(--accent);
-  color:#0b0f1a;
-  font-weight:800;
-  letter-spacing:.2px;
-  cursor:pointer;
-  transition:transform .05s ease, filter .2s ease;
-}
-button:hover{ filter:brightness(1.08); }
-button:active{ transform:translateY(1px); }
-button.secondary{ background:transparent; color:var(--text); border-color:rgba(255,255,255,.16); }
-button:disabled{ opacity:.6; cursor:not-allowed; }
-.actions{ display:flex; gap:var(--s2); margin-top:var(--s2); flex-wrap:wrap; }
-.msg{ min-height:1.25em; color:var(--warn); margin-top:var(--s1); }
-.hidden{ display:none !important; }
-.muted{ color:var(--muted); } .small{ font-size:0.92rem; color:var(--muted); }
-
-/* ---- Theme toggle button ---- */
-.theme-toggle{
-  position:fixed; top:14px; right:14px;
-  z-index:10000;
-  padding:10px 12px;
-  border-radius:12px;
-  background:rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.16);
-  color:var(--text);
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  height: 100%;
+  color: var(--text-light);
+  background: var(--bg-dark);
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
-/* =========================================
-   AUTH LAYOUT: centered two-column → one-column
-   ========================================= */
-#authLayout{
-  /* center the whole auth section on the page */
-  max-width:1000px;
-  margin:0 auto var(--s4);
-  display:grid;
-  grid-template-columns: 1fr 1fr;   /* two columns on wide screens */
-  gap:var(--s3);
-  align-items:start;                /* align tops so headings line up */
-  justify-content:center;           /* center the grid within main */
+body.light {
+  color: var(--text-dark);
+  background: var(--bg-light);
 }
 
-/* left side contains identify + pin panels stacked */
-.auth-left{
-  display:grid;
-  align-content:start;
-  gap:var(--s3);
-  min-width:340px;                  /* keeps card from getting too skinny */
+.hidden {
+  display: none !important;
 }
 
-/* right side leaderboard preview card */
-#lbPreview{
-  min-width:340px;
-}
-
-/* tighter list in preview */
-#leaderboardPreview.tight{
-  margin:0; padding-left:1.25rem;
-}
-#leaderboardPreview li{ margin:4px 0; }
-
-/* Responsive: on narrower screens, stack vertically and keep centered width */
-@media (max-width: 980px){
-  #authLayout{
-    grid-template-columns: 1fr;     /* single column */
-    max-width: 640px;               /* keep it nicely centered */
-  }
-  .auth-left, #lbPreview{
-    min-width: unset;
-  }
-}
-
-/* ---- App visibility states ---- */
-#identifyPanel, #pinPanel, #authLayout, #dashboard{ display:none; }
-body[data-state="auth-id"] #authLayout{ display:grid; }
-body[data-state="auth-id"] #identifyPanel{ display:block; }
-body[data-state="auth-pin"] #authLayout{ display:grid; }
-body[data-state="auth-pin"] #pinPanel{ display:block; }
-body[data-state="app"] #dashboard{ display:block; }
-
-/* ---- Busy overlay (auth actions only) ---- */
-.busy-overlay{
-  position:fixed; inset:0;
-  background:rgba(10,12,22,.6);
-  display:flex; align-items:center; justify-content:center;
-  backdrop-filter:blur(2px);
-  z-index:9999;
-}
-.busy-overlay.hidden{ display:none !important; }
-.busy-box{
-  background:rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.16);
-  padding:20px 24px; border-radius:14px;
-  display:flex; gap:12px; align-items:center;
-  box-shadow:var(--shadow);
-}
-.spinner{
-  width:22px; height:22px;
-  border:3px solid rgba(255,255,255,.35);
-  border-top-color: var(--accent);
-  border-radius:50%;
-  animation:spin .7s linear infinite;
-}
-@keyframes spin{ to{ transform: rotate(360deg); } }
-.busy-text{ font-weight:700; letter-spacing:.2px; }
-
-/* =========================================
-   DASHBOARD
-   ========================================= */
-.grid.two{ display:grid; grid-template-columns:1fr 1fr; gap:var(--s3); }
-@media (max-width:1000px){ .grid.two{ grid-template-columns:1fr; } }
-
-#dashboard {
-  display: block;
-  gap: 0;
-}
-
-#dashboard > .grid.two {
-  margin-bottom: var(--s3);
-}
-
-#dashboard > .card {
-  margin-bottom: var(--s3);
-}
-
-/* Profile / Leaderboard cards inside dashboard */
-#profileCard p, #boardCard ol{ margin: .25rem 0; }
-
-/* ---- Activities Grid: responsive 4→3→2→1 with max width ---- */
-#activities{
-  --tile-min: 240px;
-  --tile-max: 300px;
-  max-width: calc(4 * var(--tile-max) + 3 * var(--s2));
-  margin-inline:auto;
-}
-@media (max-width:1200px){
-  #activities{ max-width: calc(3 * var(--tile-max) + 2 * var(--s2)); }
-}
-@media (max-width:900px){
-  #activities{ max-width: calc(2 * var(--tile-max) + 1 * var(--s2)); }
-}
-
-.activities{
-  display:grid;
-  grid-auto-flow: row dense;
-  grid-template-columns: repeat(auto-fit, minmax(var(--tile-min), var(--tile-max)));
-  gap:var(--s2);
-  justify-content:start;
-  align-items:start;
-}
-.activity{ width:100%; }
-
-/* ---- Activity Tile ---- */
-.activity{
-  position:relative;
-  padding:var(--s2);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:12px;
-  background:rgba(255,255,255,.03);
-  transition:filter .25s ease, opacity .25s ease, transform .25s ease;
-  overflow:hidden;
-}
-.activity h3{ margin:0 0 var(--s1) 0; font-size:1.05rem; }
-.activity p{ margin:.25rem 0; }
-.activity .row{ margin-top:var(--s2); }
-
-/* ensure submit button doesn’t stretch full width */
-.activity .row.stack button{ width:auto; align-self:flex-start; }
-
-.activity.locked{ pointer-events:none; }
-.activity.done{ opacity:.6; filter:grayscale(.25) brightness(.95); }
-
-/* ---- Per-tile processing overlay (no spinner) + shimmer verdict ---- */
-.activity::before, .activity::after{ position:absolute; content:''; pointer-events:none; }
-.activity::before{ display:none; }
-.activity.processing::before{ display:block; inset:0; background:rgba(10,12,22,.35); }
-
-/* shimmer verdict then fade to gray */
-.activity.success::before,
-.activity.fail::before,
-.activity.neutral::before{
-  display:block; inset:0; opacity:0; animation-fill-mode:forwards;
-}
-.activity.success::before{ animation: verdictGreen 700ms ease, fadeGray 600ms ease 700ms forwards; }
-.activity.fail::before{    animation: verdictRed   700ms ease, fadeGray 600ms ease 700ms forwards; }
-.activity.neutral::before{ animation: verdictYellow700 700ms ease, fadeGray 600ms ease 700ms forwards; }
-
-@keyframes verdictGreen{
-  0%{opacity:0;background:rgba(67,209,122,0);}
-  35%{opacity:1;background:rgba(67,209,122,.35);}
-  70%{background:rgba(67,209,122,.28);}
-  100%{opacity:1;background:rgba(67,209,122,.22);}
-}
-@keyframes verdictRed{
-  0%{opacity:0;background:rgba(255,107,107,0);}
-  35%{opacity:1;background:rgba(255,107,107,.35);}
-  70%{background:rgba(255,107,107,.28);}
-  100%{opacity:1;background:rgba(255,107,107,.22);}
-}
-@keyframes verdictYellow700{
-  0%{opacity:0;background:rgba(255,204,102,0);}
-  35%{opacity:1;background:rgba(255,204,102,.45);}
-  70%{background:rgba(255,204,102,.32);}
-  100%{opacity:1;background:rgba(255,204,102,.26);}
-}
-@keyframes fadeGray{ to{ background:rgba(128,128,128,.18); } }
-
-/* ---- Tile Toast (centered overlay) ---- */
-.tile-toast{
-  position:absolute;
-  top:50%; left:50%;
-  transform:translate(-50%, -50%);
-  background:rgba(0,0,0,.85); color:#fff;
-  padding:8px 12px; border-radius:10px; font-size:.95rem; pointer-events:none;
-  opacity:0; white-space:nowrap; z-index:40; animation:tileToast 2s ease forwards;
-  box-shadow:var(--shadow);
-}
-.tile-toast.good{ background:rgba(67,209,122,.9); }
-.tile-toast.bad{ background:rgba(255,107,107,.9); }
-.tile-toast.info{ background:rgba(255,204,102,.95); color:#1a1a1a; }
-
-@keyframes tileToast{
-  0%{ opacity:0; transform:translate(-50%,-40%); }
-  10%{ opacity:1; transform:translate(-50%,-50%); }
-  90%{ opacity:1; }
-  100%{ opacity:0; transform:translate(-50%,-60%); }
-}
-
-/* ---- Slide-to-end animation when processing ---- */
-.activity.moving{ animation: slideToEnd 250ms ease; }
-@keyframes slideToEnd{
-  from{ transform:translateX(0); opacity:1; }
-  to{ transform:translateX(6px); opacity:.98; }
-}
-
-/* ---- Archive Drawer ---- */
-.archive{ margin-top:var(--s3); }
-.archive-toggle{
-  width:100%; text-align:left; display:flex; align-items:center; gap:10px;
-  background:transparent; color:var(--text);
-  border-color:rgba(255,255,255,.16);
-}
-.archive-toggle[aria-expanded="true"]::after{ content:'▲'; margin-left:auto; }
-.archive-toggle[aria-expanded="false"]::after{ content:'▼'; margin-left:auto; }
-
-.archive-panel{ margin-top:var(--s2); }
-.archive-list{ list-style:none; padding:0; margin:0; display:grid; gap:var(--s2); }
-.archive-item{
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:12px;
-  padding:var(--s2);
-  background:rgba(255,255,255,.03);
-}
-.archive-item .hdr{ display:flex; gap:10px; align-items:center; justify-content:space-between; }
-.archive-item .meta{ color:var(--muted); font-size:.9rem; }
-.archive-item .detail{ margin-top:8px; display:none; }
-.archive-item[aria-expanded="true"] .detail{ display:block; }
-.archive-item .pill{ font-size:.8rem; padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.18); }
-.pill.good{    background:rgba(67,209,122,.18); border-color:rgba(67,209,122,.35); }
-.pill.bad{     background:rgba(255,107,107,.18); border-color:rgba(255,107,107,.35); }
-.pill.neutral{ background:rgba(255,204,102,.2); border-color:rgba(255,204,102,.4); }
-.archive-item .answer{ white-space:pre-wrap; background:rgba(0,0,0,.2); padding:6px 8px; border-radius:8px; }
-.archive-item .correct{ opacity:.9; }
-
-/* ---- Footer & Global Toast ---- */
-.footer{ text-align:center; color:var(--muted); padding:24px 0 48px; }
-.toast{
-  position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
-  background:rgba(0,0,0,.8); color:#fff; padding:10px 14px; border-radius:10px; box-shadow:var(--shadow);
-  z-index:10000;
-}
-
-/* ============================
-   Avatar UI (v19.1.6 plan)
-   ============================ */
-
-/* row in Profile card: avatar + name side-by-side */
-.profile-row {
+/* Busy overlay */
+#busyOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  color: white;
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  justify-content: center;
+  z-index: 9999;
+  font-size: 1.3em;
+  text-align: center;
+  flex-direction: column;
 }
 
-/* main avatar in profile */
-.avatar-img {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: rgba(255,255,255,.05);
-  border: 2px solid rgba(255,255,255,.12);
+#busyOverlay.hidden {
+  display: none;
 }
 
-/* tiny version (for leaderboard later) */
-.avatar-img.sm {
-  width: 30px;
-  height: 30px;
-  border-width: 1px;
+.busy-text {
+  margin-top: 0.5em;
+  opacity: 0.85;
 }
 
-/* the container in index.html we added:
-   <div id="avatarPickerPanel" class="avatar-picker hidden">...</div> */
-.avatar-picker {
-  margin-top: 12px;
+/* Toast notifications */
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #fff;
+  padding: 0.6em 1em;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 10000;
+}
+.toast:not(.hidden) {
+  opacity: 1;
+}
+.toast.bad {
+  background: #e63946;
+}
+.toast.good {
+  background: #06d6a0;
+}
+
+/* Cards */
+.card {
+  background: rgba(255,255,255,0.04);
+  padding: 1rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 1rem;
+}
+
+body.light .card {
+  background: rgba(0,0,0,0.05);
+}
+
+/* Grid layout */
+.grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 10px;
-  max-width: 380px;          /* prevents panel from stretching the card */
-  max-height: 220px;
-  overflow-y: auto;
-  background: rgba(0,0,0,.25);
-  border: 1px solid rgba(255,255,255,.04);
-  border-radius: 12px;
-  padding: 10px;
+  gap: 1rem;
+}
+.grid.two {
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 768px) {
+  .grid.two {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* individual avatar tile */
-.avatar-tile {
+/* Profile section */
+#profileCard {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  border-radius: 10px;
-  padding: 4px;
-  transition: background .15s ease;
-}
-.avatar-tile:hover {
-  background: rgba(255,255,255,.05);
+  align-items: flex-start;
+  gap: 0.75rem;
 }
 
-.avatar-tile img {
-  width: 60px;
-  height: 60px;
-  border-radius: 999px;
+#profileCard .avatar-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   object-fit: cover;
-  background: rgba(0,0,0,.25);
-  border: 1px solid rgba(255,255,255,.08);
 }
 
-/* selected state */
-.avatar-tile.selected {
-  outline: 2px solid var(--accent);
-  background: rgba(127,90,240,.12);
+/* Activity tiles */
+.activity {
+  background: rgba(255,255,255,0.03);
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+  transition: background 0.2s;
+}
+.activity.done {
+  opacity: 0.65;
+}
+.activity:hover {
+  background: rgba(255,255,255,0.08);
+}
+.activity.locked {
+  opacity: 0.5;
 }
 
-/* we already have .hidden in your sheet; we’ll reuse it */
-/* .hidden { display:none!important; } */
+/* Buttons */
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.4em 0.8em;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+button:hover {
+  background: #9d79f7;
+}
+button.small {
+  font-size: 0.85em;
+  padding: 0.3em 0.6em;
+}
+button.secondary {
+  background: rgba(255,255,255,0.15);
+}
+button.secondary:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+/* Archive section */
+#archivePanel {
+  margin-top: 1rem;
+}
+.archive-item {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+.archive-item:last-child {
+  border-bottom: none;
+}
+.archive-item[aria-expanded="true"] .detail {
+  display: block;
+}
+.archive-item .detail {
+  display: none;
+  margin-top: 0.5rem;
+  background: rgba(255,255,255,0.05);
+  padding: 0.5rem;
+  border-radius: var(--radius);
+}
+.archive-item .pill.good {
+  color: #06d6a0;
+}
+.archive-item .pill.bad {
+  color: #e63946;
+}
+.archive-item .pill.neutral {
+  color: #ffd166;
+}
+
 /* ============================
    Leaderboard layout tweaks
    ============================ */
 
-/* header with toggle */
+/* Leaderboard container + header */
 .lb-header {
   display: flex;
   align-items: center;
@@ -427,7 +214,6 @@ body[data-state="app"] #dashboard{ display:block; }
   gap: 0.5rem;
 }
 
-/* main leaderboard rows on dashboard */
 #leaderboard .lb-row {
   display: flex;
   align-items: center;
@@ -474,10 +260,74 @@ body[data-state="app"] #dashboard{ display:block; }
   border-radius: 999px;
 }
 
-/* dashboard leaderboard: remove native list numbers */
-#leaderboard {
-  list-style: none;
+/* force-remove native ordered list markers on dashboard leaderboard */
+#leaderboard,
+#leaderboard li {
+  list-style: none !important;
   margin: 0;
   padding: 0;
 }
+#leaderboard li::marker {
+  content: '' !important;
+}
 
+/* leaderboard expansion toggle */
+#leaderboardToggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* Leaderboard preview list (auth screen) */
+#leaderboardPreview {
+  list-style: none;
+  padding-left: 0;
+}
+#leaderboardPreview li {
+  margin-bottom: 0.3rem;
+}
+
+/* Avatars in preview */
+#leaderboardPreview img {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* ============================
+   Inputs and forms
+   ============================ */
+input {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius);
+  color: #fff;
+  padding: 0.4em 0.6em;
+  outline: none;
+  width: 100%;
+}
+input:focus {
+  border-color: var(--accent);
+}
+body.light input {
+  background: rgba(0,0,0,0.05);
+  color: #000;
+}
+.row.stack {
+  display: flex;
+  flex-direction: row;
+  gap: 0.4em;
+}
+
+/* Misc utility */
+.muted {
+  opacity: 0.6;
+  font-size: 0.9em;
+}
