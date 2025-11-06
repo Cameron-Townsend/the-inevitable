@@ -24,76 +24,60 @@
   }
 
   // opts: { current, avatars }
-  async function open(opts) {
+  function open(opts) {
     opts = opts || {};
     var current = opts.current || null;
     var avatars = Array.isArray(opts.avatars)
       ? opts.avatars
       : (Array.isArray(window.__avatars) ? window.__avatars : []);
 
-    // NEW: panel-scoped busy start (profile panel)
-    const stopBusy = (window.CCPanelBusy)
-      ? (window.CCPanelBusy.show('profile'), () => window.CCPanelBusy.hide('profile'))
-      : (() => {});
-
     return new Promise(function (resolve) {
-      try {
-        // render directly into the panel already in index.html if present
-        var panel = document.getElementById('avatarPickerPanel');
-        var createdTemp = false;
+      // prefer the panel we already have in index.html
+      var panel = document.getElementById('avatarPickerPanel');
+      var createdTemp = false;
 
-        if (!panel) {
-          // fallback to body overlay if index.html didn’t have one
-          panel = document.createElement('div');
-          panel.id = 'avatarPickerPanel';
-          panel.className = 'avatar-picker';
-          document.body.appendChild(panel);
-          createdTemp = true;
-        }
-
-        panel.innerHTML = '';
-        panel.classList.remove('hidden');
-
-        avatars.forEach(function (av) {
-          var tile = document.createElement('div');
-          tile.className = 'avatar-tile';
-          if (current && av.avatarId === current) {
-            tile.classList.add('selected');
-          }
-          var img = document.createElement('img');
-          img.src = safe(av.avatarURL);
-          img.alt = av.avatarId || 'Avatar';
-          tile.appendChild(img);
-          tile.addEventListener('click', function () {
-            panel.classList.add('hidden');
-            if (createdTemp) panel.remove();
-            stopBusy();
-            resolve({
-              avatarId: av.avatarId,
-              avatarURL: av.avatarURL
-            });
-          });
-          panel.appendChild(tile);
-        });
-
-        // click outside to close if panel is just in body
-        if (createdTemp) {
-          document.addEventListener('click', function esc(e) {
-            if (!panel.contains(e.target)) {
-              panel.classList.add('hidden');
-              document.removeEventListener('click', esc);
-              stopBusy();
-              resolve(null);
-            }
-          });
-        }
-      } catch (e) {
-        stopBusy();
-        resolve(null);
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'avatarPickerPanel';
+        panel.className = 'avatar-picker';
+        document.body.appendChild(panel);
+        createdTemp = true;
       }
-    }).finally(() => {
-      // ensure overlay hides if something threw
-      stopBusy();
+
+      panel.innerHTML = '';
+      panel.classList.remove('hidden');
+
+      avatars.forEach(function (av) {
+        var tile = document.createElement('div');
+        tile.className = 'avatar-tile';
+        if (current && av.avatarId === current) {
+          tile.classList.add('selected');
+        }
+        var img = document.createElement('img');
+        img.src = safe(av.avatarURL);
+        img.alt = av.avatarId || 'Avatar';
+        tile.appendChild(img);
+        tile.addEventListener('click', function () {
+          panel.classList.add('hidden');
+          if (createdTemp) panel.remove();
+          resolve({
+            avatarId: av.avatarId,
+            avatarURL: av.avatarURL
+          });
+        });
+        panel.appendChild(tile);
+      });
+
+      // if we created a floating panel, allow click-outside to close
+      if (createdTemp) {
+        document.addEventListener('click', function esc(e) {
+          if (!panel.contains(e.target)) {
+            panel.classList.add('hidden');
+            document.removeEventListener('click', esc);
+            resolve(null);
+          }
+        });
+      }
     });
   }
 
