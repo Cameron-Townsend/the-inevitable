@@ -37,6 +37,24 @@ body.light {
 .hidden {
   display: none !important;
 }
+/* App view state visibility */
+#authIdView,
+#authPinView,
+#dashboard {
+  display: none;
+}
+
+body[data-state="auth-id"] #authIdView {
+  display: block;
+}
+
+body[data-state="auth-pin"] #authPinView {
+  display: block;
+}
+
+body[data-state="app"] #dashboard {
+  display: block;
+}
 
 /* Busy overlay */
 #busyOverlay {
