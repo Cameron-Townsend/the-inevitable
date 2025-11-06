@@ -96,17 +96,35 @@ function renderProfile(p){
   // we do NOT force avatar here; a separate patch file will read window.__profile
 }
 
-function renderLeaderboard(rows){
-  const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).forEach((r,i)=>{
-    const li = document.createElement('li');
-    const m  = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+function renderLeaderboard(rows, opts = {}){
+  const ol = $('#leaderboard'); if (!ol) return;
+  ol.innerHTML = '';
 
-    // build row
+  const currentUserId = cache.profile?.userId;
+  // if we have a flag set by the toggle, respect it; else default to 5
+  const limit = opts.limit ?? (cache.showFullLB ? 20 : 5);
+
+  (rows || []).slice(0, limit).forEach((r, i) => {
+    const li = document.createElement('li');
+
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    const rank = i + 1;
+
     const row = document.createElement('div');
     row.className = 'lb-row';
 
-    // avatar (if backend gave us one)
+    // highlight current user
+    if (r.userId && r.userId === currentUserId) {
+      row.classList.add('me');
+    }
+
+    // left: medal + rank
+    const left = document.createElement('div');
+    left.className = 'lb-left';
+    left.textContent = `${medal} ${rank}.`;
+    row.appendChild(left);
+
+    // avatar (optional)
     if (r.avatarURL) {
       const img = document.createElement('img');
       img.className = 'avatar-img sm';
@@ -116,27 +134,34 @@ function renderLeaderboard(rows){
       row.appendChild(img);
     }
 
-    // name + score
-    const span = document.createElement('span');
-    span.textContent = `${r.name} — 🪙 ${r.score}`;
-    row.appendChild(span);
+    // name
+    const name = document.createElement('span');
+    name.className = 'lb-name';
+    name.textContent = r.name;
+    row.appendChild(name);
 
-    li.textContent = m + ' ';
+    // score
+    const score = document.createElement('span');
+    score.className = 'lb-score';
+    score.textContent = `🪙 ${r.score}`;
+    row.appendChild(score);
+
     li.appendChild(row);
     ol.appendChild(li);
   });
 }
 
-
 function renderLeaderboardPreview(rows){
-  const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
-  (rows||[]).slice(0,8).forEach((r,i)=>{
-    const li=document.createElement('li');
-    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
-    li.textContent=`${m} ${r.name} — ${r.score}`;
+  const ol = $('#leaderboardPreview'); if(!ol) return;
+  ol.innerHTML = '';
+  (rows || []).slice(0, 5).forEach((r, i) => {
+    const li = document.createElement('li');
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+    li.textContent = `${medal} ${r.name} — ${r.score}`;
     ol.appendChild(li);
   });
 }
+
 function renderActivities(list, doneSet){
   const wrap=$('#activities'); if(!wrap) return; wrap.innerHTML='';
   const hide = cache.hideCompleted !== false;
@@ -466,6 +491,15 @@ function wireEvents(){
       if(open){ p.setAttribute('hidden',''); archBtn.setAttribute('aria-expanded','false'); }
       else { p.removeAttribute('hidden'); archBtn.setAttribute('aria-expanded','true'); }
     }, { passive:true });
+  }
+    // leaderboard show all / show top 5
+  const lbToggle = $('#lbToggle');
+  if (lbToggle) {
+    lbToggle.addEventListener('click', () => {
+      cache.showFullLB = !cache.showFullLB;
+      lbToggle.textContent = cache.showFullLB ? 'Show top 5' : 'Show all';
+      renderLeaderboard(cache.lb || [], { limit: cache.showFullLB ? 20 : 5 });
+    }, { passive: true });
   }
 }
 // ==========================================================
