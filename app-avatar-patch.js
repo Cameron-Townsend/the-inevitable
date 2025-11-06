@@ -4,12 +4,11 @@
   const cfg = (window.ClassroomConfig || {});
   const BASE = cfg.WEB_APP_URL || '';
 
-  // defensive: make sure we have the same container IDs we added in index.html
   const btnId = 'chooseAvatarBtn';
   const panelId = 'avatarPickerPanel';
   const imgId = 'profileAvatar';
 
-  // NEW: use global panel-scoped busy if available, otherwise fall back to legacy profile-busy
+  // show busy ONLY for real network work (not for opening the picker)
   function startProfileBusy(message) {
     if (window.CCPanelBusy) {
       window.CCPanelBusy.show('profile');
@@ -47,7 +46,6 @@
   }
 
   function getAvatars() {
-    // we normalized this in app.js
     return (window.__avatars && Array.isArray(window.__avatars))
       ? window.__avatars
       : (window.__avatars && Array.isArray(window.__avatars.avatars))
@@ -111,52 +109,49 @@
   function mount() {
     const btn = document.getElementById(btnId);
     const panel = document.getElementById(panelId);
-    if (!btn || !panel) return;
+    if (!btn) return;
 
     btn.addEventListener('click', async () => {
-      const panel = document.getElementById(panelId);
+      const pickerPanel = document.getElementById(panelId);
 
-      // toggle behavior — second click hides the panel if open
-      if (panel && !panel.classList.contains('hidden')) {
-        panel.classList.add('hidden');
+      // toggle: if it's already open, just hide it, no busy
+      if (pickerPanel && !pickerPanel.classList.contains('hidden')) {
+        pickerPanel.classList.add('hidden');
         return;
       }
 
       const current = (getProfile() && (getProfile().avatarId || getProfile().avatarID)) || null;
 
-      // if the plugin exists, let it render; otherwise inline-render
+      // open the picker — this should NOT block the panel
       if (window.ClassroomPlugins && window.ClassroomPlugins.avatarPicker) {
-        // show panel busy while we open/fetch
-        const stop = startProfileBusy('Loading avatars…');
+        const choice = await window.ClassroomPlugins.avatarPicker.open({
+          current,
+          avatars: getAvatars()
+        });
+
+        // user may have dismissed the picker
+        if (!choice || !choice.avatarId) return;
+
+        // NOW we do network → show busy
+        const prof = getProfile() || {};
+        const stop = startProfileBusy('Updating avatar…');
         try {
-          const choice = await window.ClassroomPlugins.avatarPicker.open({
-            current,
-            avatars: getAvatars()
+          await persistAvatar(prof.userId, choice.avatarId);
+          window.__profile = Object.assign({}, prof, {
+            avatarId: choice.avatarId,
+            avatarURL: choice.avatarURL
           });
-          if (choice && choice.avatarId) {
-            const prof = getProfile() || {};
-            const stop2 = startProfileBusy('Updating avatar…');
-            try {
-              await persistAvatar(prof.userId, choice.avatarId);
-              // update global profile so app.js and other code see it
-              window.__profile = Object.assign({}, prof, {
-                avatarId: choice.avatarId,
-                avatarURL: choice.avatarURL
-              });
-              renderProfileAvatar();
-              renderLeaderboardAvatars();
-              if (window.showToast) window.showToast('Avatar updated ✅');
-            } catch (e) {
-              if (window.showToast) window.showToast('Could not update avatar ❌');
-            } finally {
-              stop2();
-            }
-          }
+          renderProfileAvatar();
+          renderLeaderboardAvatars();
+          if (window.showToast) window.showToast('Avatar updated ✅');
+        } catch (e) {
+          if (window.showToast) window.showToast('Could not update avatar ❌');
         } finally {
           stop();
         }
       } else {
-        // fallback: basic inline render
+        // fallback inline picker — no busy for just showing it
+        if (!panel) return;
         panel.innerHTML = '';
         const list = getAvatars();
         list.forEach(av => {
