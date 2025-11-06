@@ -9,15 +9,32 @@
   const panelId = 'avatarPickerPanel';
   const imgId = 'profileAvatar';
 
+  // small busy overlay for just the profile card
+  function withProfileBusy(message) {
+    const card = document.getElementById('profileCard');
+    if (!card) return () => {};
+    let ov = card.querySelector('.profile-busy');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.className = 'profile-busy';
+      ov.innerHTML = '<div class="profile-busy-text"></div>';
+      card.appendChild(ov);
+    }
+    const txt = ov.querySelector('.profile-busy-text');
+    if (txt) txt.textContent = message || 'Updating…';
+    ov.classList.remove('hidden');
+    return () => {
+      ov.classList.add('hidden');
+    };
+  }
+
   function safeAvatarUrl(url) {
     if (!url) return null;
     try {
       const u = new URL(url, location.origin);
-      // force https if possible
-      if (u.protocol === 'http:') u.protocol = 'https:';
-      return u.toString();
-    } catch (e) {
-      return null;
+      return u.href;
+    } catch (_) {
+      return url;
     }
   }
 
@@ -28,7 +45,25 @@
     // we normalized this in app.js
     return (window.__avatars && Array.isArray(window.__avatars))
       ? window.__avatars
-      : (Array.isArray(window.__avatars?.avatars) ? window.__avatars.avatars : []);
+      : (window.__avatars && Array.isArray(window.__avatars.avatars))
+        ? window.__avatars.avatars
+        : [];
+  }
+
+  async function persistAvatar(userId, avatarId) {
+    if (!userId || !avatarId) throw new Error('missing_fields');
+    const res = await fetch(BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: new URLSearchParams({
+        action: 'setavatar',
+        userId: userId,
+        avatarId: avatarId
+      })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Avatar update failed');
+    return json;
   }
 
   function renderProfileAvatar() {
@@ -46,55 +81,29 @@
     }
   }
 
-  // update leaderboard with tiny avatar next to each name, if profile data includes avatar
   function renderLeaderboardAvatars() {
-  const prof = getProfile();
-  if (!prof) return;
-  const lb = document.getElementById('leaderboard');
-  if (!lb) return;
-
-  // find the <li> that belongs to this user and only update that one
-  const items = lb.querySelectorAll('li');
-  items.forEach(li => {
-    const text = li.textContent || '';
-    // try to match either displayName or userId
-    if (prof.displayName && text.includes(prof.displayName)) {
-      // only update this one
-      const url = safeAvatarUrl(prof.avatarURL || prof.avatarUrl);
-      if (!url) return;
-      // if there's already an img.sm in here, update it
-      const existing = li.querySelector('img.avatar-img.sm');
-      if (existing) {
-        existing.src = url;
-      } else {
-        const img = document.createElement('img');
-        img.className = 'avatar-img sm';
-        img.src = url;
-        img.alt = 'Avatar';
-        li.insertBefore(img, li.firstChild);
+    const prof = getProfile();
+    if (!prof || !prof.userId) return;
+    const meId = prof.userId;
+    const rows = document.querySelectorAll('#leaderboard li .lb-row, #leaderboard li div.lb-row');
+    rows.forEach(row => {
+      const nameEl = row.querySelector('.lb-name');
+      const isMe = row.classList.contains('me');
+      if (!isMe) return;
+      // ensure avatar is updated
+      const img = row.querySelector('img.avatar-img');
+      if (prof.avatarURL) {
+        if (!img) {
+          const pic = document.createElement('img');
+          pic.className = 'avatar-img sm';
+          pic.src = safeAvatarUrl(prof.avatarURL);
+          pic.alt = prof.displayName || prof.userId || 'Avatar';
+          row.insertBefore(pic, nameEl || row.firstChild);
+        } else {
+          img.src = safeAvatarUrl(prof.avatarURL);
+        }
       }
-    }
-  });
-}
-
-  async function persistAvatar(userId, avatarId) {
-    if (!BASE || !userId || !avatarId) return;
-    // we used x-www-form-urlencoded in app.js
-    const body = new URLSearchParams({
-      action: 'setavatar',
-      userId: userId,
-      avatarId: avatarId
     });
-    const res = await fetch(BASE, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-      body
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || (json && json.ok === false)) {
-      throw new Error(json.error || 'setavatar failed');
-    }
-    return json;
   }
 
   function mount() {
@@ -103,6 +112,14 @@
     if (!btn || !panel) return;
 
     btn.addEventListener('click', async () => {
+      const panel = document.getElementById(panelId);
+
+      // NEW: toggle behavior — second click hides the panel if still open
+      if (panel && !panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        return;
+      }
+
       // lazy-fill panel from plugin
       const current = (getProfile() && (getProfile().avatarId || getProfile().avatarID)) || null;
 
@@ -114,6 +131,7 @@
         });
         if (choice && choice.avatarId) {
           const prof = getProfile() || {};
+          const done = withProfileBusy('Updating avatar…');
           try {
             await persistAvatar(prof.userId, choice.avatarId);
             // update global profile so app.js and other code see it
@@ -126,47 +144,38 @@
             if (window.showToast) window.showToast('Avatar updated ✅');
           } catch (e) {
             if (window.showToast) window.showToast('Could not update avatar ❌');
+          } finally {
+            done();
           }
         }
       } else {
         // fallback: basic inline render
-        panel.classList.toggle('hidden');
-        if (!panel.classList.contains('hidden')) {
-          renderInlinePicker(panel);
-        }
-      }
-    });
-
-    // initial render in case profile was present on load
-    renderProfileAvatar();
-  }
-
-  function renderInlinePicker(panel) {
-    const list = getAvatars();
-    panel.innerHTML = '';
-    list.forEach(av => {
-      const tile = document.createElement('div');
-      tile.className = 'avatar-tile';
-      const img = document.createElement('img');
-      img.src = safeAvatarUrl(av.avatarURL) || '';
-      img.alt = av.avatarId || 'Avatar';
-      tile.appendChild(img);
-      tile.addEventListener('click', async () => {
-        const prof = getProfile() || {};
-        try {
-          await persistAvatar(prof.userId, av.avatarId);
-          window.__profile = Object.assign({}, prof, {
-            avatarId: av.avatarId,
-            avatarURL: av.avatarURL
+        panel.innerHTML = '';
+        const list = getAvatars();
+        list.forEach(av => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = av.avatarId;
+          btn.addEventListener('click', async () => {
+            const prof = getProfile() || {};
+            const done = withProfileBusy('Updating avatar…');
+            try {
+              await persistAvatar(prof.userId, av.avatarId);
+              window.__profile = Object.assign({}, prof, {
+                avatarId: av.avatarId,
+                avatarURL: av.avatarURL
+              });
+              renderProfileAvatar();
+              renderLeaderboardAvatars();
+            } finally {
+              done();
+            }
+            panel.classList.add('hidden');
           });
-          renderProfileAvatar();
-          renderLeaderboardAvatars();
-          if (window.showToast) window.showToast('Avatar updated ✅');
-        } catch (e) {
-          if (window.showToast) window.showToast('Could not update avatar ❌');
-        }
-      });
-      panel.appendChild(tile);
+          panel.appendChild(btn);
+        });
+        panel.classList.remove('hidden');
+      }
     });
   }
 
