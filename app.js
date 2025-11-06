@@ -6,7 +6,6 @@ const K = { uid:'cc.uid', pin:'cc.pin', prof:'cc.profile', acts:'cc.activities',
 const $  = (s,root=document)=> root.querySelector(s);
 const $$ = (s,root=document)=> Array.from(root.querySelectorAll(s));
 
-// Busy (auth-only)
 // Busy (auth-only) — async-aware, with minimum display time
 const Busy = (() => {
   let busySince = 0;
@@ -32,7 +31,7 @@ const Busy = (() => {
     const elapsed = Date.now() - busySince;
     if (!force && elapsed < lingerMs) {
       const wait = lingerMs - elapsed;
-      await new Promise(res => setTimeout(res, wait));
+      await new Promise(res => res(wait));
     }
     e.classList.add('hidden');
   }
@@ -40,6 +39,19 @@ const Busy = (() => {
   return { show, hide };
 })();
 
+// Panel-scoped busy overlay (global, future-ready)
+window.CCPanelBusy = {
+  show(panelName) {
+    if (!panelName) return;
+    const el = document.querySelector(`.cc-panel[data-panel="${panelName}"] .panel-busy-overlay`);
+    if (el) el.classList.add('is-active');
+  },
+  hide(panelName) {
+    if (!panelName) return;
+    const el = document.querySelector(`.cc-panel[data-panel="${panelName}"] .panel-busy-overlay`);
+    if (el) el.classList.remove('is-active');
+  }
+};
 
 // Storage
 const store = {
@@ -81,7 +93,8 @@ const cache = {
   authMode:'login',
   archive:[],
   hideCompleted:true,
-  avatars:null           // <-- added for avatar precache
+  avatars:null,
+  showFullLB:false
 };
 
 function loadArchive(){ try{ cache.archive = JSON.parse(localStorage.getItem(K.arch)||'[]'); }catch{ cache.archive=[]; } }
@@ -93,7 +106,7 @@ function persistDone(){ try{ localStorage.setItem(K.subs, JSON.stringify([...cac
 function renderProfile(p){
   $('#displayName') && ($('#displayName').textContent = p.displayName||p.userId);
   $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0);
-  // we do NOT force avatar here; a separate patch file will read window.__profile
+  // avatar is rendered via patch/plugin using window.__profile
 }
 
 function renderLeaderboard(rows, opts = {}){
@@ -101,7 +114,6 @@ function renderLeaderboard(rows, opts = {}){
   ol.innerHTML = '';
 
   const currentUserId = cache.profile?.userId;
-  // if we have a flag set by the toggle, respect it; else default to 5
   const limit = opts.limit ?? (cache.showFullLB ? 20 : 5);
 
   (rows || []).slice(0, limit).forEach((r, i) => {
@@ -113,18 +125,15 @@ function renderLeaderboard(rows, opts = {}){
     const row = document.createElement('div');
     row.className = 'lb-row';
 
-    // highlight current user
     if (r.userId && r.userId === currentUserId) {
       row.classList.add('me');
     }
 
-    // left: medal + rank
     const left = document.createElement('div');
     left.className = 'lb-left';
     left.textContent = `${medal} ${rank}.`;
     row.appendChild(left);
 
-    // avatar (optional)
     if (r.avatarURL) {
       const img = document.createElement('img');
       img.className = 'avatar-img sm';
@@ -134,13 +143,11 @@ function renderLeaderboard(rows, opts = {}){
       row.appendChild(img);
     }
 
-    // name
     const name = document.createElement('span');
     name.className = 'lb-name';
     name.textContent = r.name;
     row.appendChild(name);
 
-    // score
     const score = document.createElement('span');
     score.className = 'lb-score';
     score.textContent = `🪙 ${r.score}`;
@@ -167,7 +174,7 @@ function renderActivities(list, doneSet){
   const hide = cache.hideCompleted !== false;
   (list||[]).forEach(a=>{
     const isDone = doneSet.has(a.activityId);
-    if (hide && isDone) return; // do not render completed tiles
+    if (hide && isDone) return;
     const div=document.createElement('div');
     div.className='activity'+(isDone?' done locked':'');
     div.setAttribute('data-tile', a.activityId);
@@ -182,6 +189,7 @@ function renderActivities(list, doneSet){
   });
   wrap.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', onSubmit, { passive:true }));
 }
+
 function renderArchive(){
   const ul = $('#archiveList'); if(!ul) return; ul.innerHTML='';
   if(!cache.archive.length){ ul.innerHTML = '<li class="muted">No previous activities yet.</li>'; return; }
@@ -218,7 +226,7 @@ function showTileToast(tile, msg, kind='info'){
   setTimeout(()=> div.remove(), 2000);
 }
 
-// Global toast still available for site-wide notices (login errors, etc.)
+// Global toast
 let toastTimer=null;
 function showToast(msg, kind=''){ const t=$('#toast'); if(!t) return; t.textContent=msg; t.className='toast '+(kind||''); t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400); }
 
@@ -232,95 +240,111 @@ function pickRandomAvatar(){
 
 // Ensure user has an avatar; if not, pick one and persist
 async function ensureAvatarFor(uid){
-  // if profile already has avatar, do nothing
   if (cache.profile && (cache.profile.avatarId || cache.profile.avatarURL)) {
     return;
   }
   const chosen = pickRandomAvatar();
   if(!chosen) return;
   try {
-    // persist avatar to backend
     await jpost({ action:'setavatar', userId: uid, avatarId: chosen.avatarId });
-    // update local profile
     cache.profile = cache.profile || { userId: uid, balance: 0 };
     cache.profile.avatarId = chosen.avatarId;
     cache.profile.avatarURL = chosen.avatarURL;
-    // expose globally so patch/plugin can refresh
     window.__profile = cache.profile;
   } catch (e) {
     console.warn('Failed to set default avatar', e);
   }
 }
 
-// Data fetching
+// Data fetching (panel-scoped busy for all main panels)
 async function precacheFor(uid){
-  // add getavatars to the existing bundle
-  const [
-    acts,
-    lb,
-    gm,
-    subs,
-    prof,
-    avatars
-  ] = await Promise.all([
-    jget({action:'getactivities'}),
-    jget({action:'leaderboard'}),
-    jget({action:'getgradingmap'}),
-    uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
-    uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0}),
-    jget({action:'getavatars'}).catch(()=>({ ok:false, avatars:[] }))
-  ]);
+  CCPanelBusy.show('profile');
+  CCPanelBusy.show('leaderboard');
+  CCPanelBusy.show('activities');
+  CCPanelBusy.show('archive');
 
-  if(acts.ok){ cache.acts = acts.activities; try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{} }
-  if(lb.ok){   cache.lb   = lb.leaderboard; try{ localStorage.setItem(K.lb,   JSON.stringify(cache.lb)); }catch{} renderLeaderboardPreview(cache.lb); }
-  if(gm.ok){   cache.gm   = gm; try{ localStorage.setItem(K.gm,   JSON.stringify(gm)); }catch{} }
-  if(subs.ok){
-    cache.done = new Set((subs.submissions||[]).map(s=>s.activityId));
-    try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{}
-  } else {
-    // Fallback to previously stored done set
-    loadDoneFromStorage();
-  }
-  if(prof.ok){
-    cache.profile = {
-      userId: uid,
-      balance: prof.balance,
-      displayName: prof.displayName
-    };
-    try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
-  }
-  // store avatars
-  if(avatars && (avatars.ok || Array.isArray(avatars))){
-    cache.avatars = avatars.avatars || avatars.list || avatars;
-  }
+  try {
+    const [
+      acts,
+      lb,
+      gm,
+      subs,
+      prof,
+      avatars
+    ] = await Promise.all([
+      jget({action:'getactivities'}),
+      jget({action:'leaderboard'}),
+      jget({action:'getgradingmap'}),
+      uid ? jget({action:'getsubmissions', userId:uid}) : Promise.resolve({ok:true, submissions:[]}),
+      uid ? jget({action:'getprofile', userId:uid}) : Promise.resolve({ok:true, userId:uid, balance:0}),
+      jget({action:'getavatars'}).catch(()=>({ ok:false, avatars:[] }))
+    ]);
 
-  // expose to window for avatar plugin / patch
-  window.__profile = cache.profile || { userId: uid };
-  window.__avatars = cache.avatars || [];
+    if(acts.ok){
+      cache.acts = acts.activities;
+      try{ localStorage.setItem(K.acts, JSON.stringify(cache.acts)); }catch{}
+    }
+    if(lb.ok){
+      cache.lb   = lb.leaderboard;
+      try{ localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }catch{}
+      renderLeaderboardPreview(cache.lb);
+    }
+    if(gm.ok){
+      cache.gm   = gm;
+      try{ localStorage.setItem(K.gm, JSON.stringify(gm)); }catch{}
+    }
+    if(subs.ok){
+      cache.done = new Set((subs.submissions||[]).map(s=>s.activityId));
+      try{ localStorage.setItem(K.subs, JSON.stringify([...cache.done])); }catch{}
+    } else {
+      loadDoneFromStorage();
+    }
+    if(prof.ok){
+      cache.profile = {
+        userId: uid,
+        balance: prof.balance,
+        displayName: prof.displayName
+      };
+      try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
+    }
+    if(avatars && (avatars.ok || Array.isArray(avatars))){
+      cache.avatars = avatars.avatars || avatars.list || avatars;
+    }
 
-  loadArchive();
-  renderArchive();
+    window.__profile = cache.profile || { userId: uid };
+    window.__avatars = cache.avatars || [];
+
+    loadArchive();
+    renderArchive();
+  } finally {
+    CCPanelBusy.hide('profile');
+    CCPanelBusy.hide('leaderboard');
+    CCPanelBusy.hide('activities');
+    CCPanelBusy.hide('archive');
+  }
 }
 
 function renderDash(){
   showApp();
-  // Ensure done set is loaded even if offline
   if (!cache.done || cache.done.size===0) loadDoneFromStorage();
   renderProfile(cache.profile||{ userId:store.uid(), balance:0 });
   renderLeaderboard(cache.lb||[]);
   renderActivities(cache.acts||[], cache.done||new Set());
   renderArchive();
 
-  // also re-expose after render
   window.__profile = cache.profile;
   window.__avatars = cache.avatars || [];
 
+  // background refresh of leaderboard but panel-scoped
+  CCPanelBusy.show('leaderboard');
   jget({action:'leaderboard'}).then(lb=>{
     if(lb.ok){
       cache.lb=lb.leaderboard;
       renderLeaderboard(lb.leaderboard);
     }
-  }).catch(()=>{});
+  }).catch(()=>{}).finally(()=>{
+    CCPanelBusy.hide('leaderboard');
+  });
 }
 
 // Auth flow
@@ -348,14 +372,13 @@ async function goToPin(mode){
     }
     if(mode==='login' && !exists){ cache.authMode='register'; if(primaryBtn) primaryBtn.textContent='Register'; }
 
-    // start precache early here (this is your "instant" requirement)
+    // start precache early (no panel overlays here — still in auth context)
     precacheFor(uid).catch(()=>{});
-    } catch(e){
+  } catch(e){
     setMsg('#idMsg', e.message||'Network error'); showAuthId();
   } finally {
     await Busy.hide();
   }
-
 }
 
 async function onPrimaryAuth(){
@@ -370,33 +393,25 @@ async function onPrimaryAuth(){
   await Busy.show(cache.authMode === 'register' ? 'Creating account…' : 'Signing in…');
 
   try {
-    // 1) register if needed
     if (cache.authMode === 'register') {
       const r = await jpost({ action:'register', userId:uid, pin, displayName:uid });
       if (!r.ok) throw new Error(r.error || 'Register failed');
     }
 
-    // 2) login
     const lg = await jpost({ action:'login', userId:uid, pin });
     if (!lg.ok) throw new Error(lg.error || 'Login failed');
 
-    // 3) persist creds
     store.set(uid, pin, remember);
     setMsg('#loginMsg','');
 
-    // 4) build a minimal profile immediately
     cache.profile = cache.profile || { userId: uid, balance: 0 };
     cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
 
-    // 5) show the dashboard right away so it doesn't look "stuck"
     renderDash();
 
-    // 6) now do the heavy precache in the background
-    //    if it fails, we just won't crash the UI
     try {
       await precacheFor(uid);
       await ensureAvatarFor(uid);
-      // re-render so we get fresh lb/activities/avatars
       renderDash();
     } catch (e) {
       console.warn('Background precache after auth failed:', e);
@@ -410,8 +425,7 @@ async function onPrimaryAuth(){
   }
 }
 
-
-// Submit (hide-on-reload: add to done set immediately)
+// Submit
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
 function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
 function removeClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.remove(x)); }
@@ -422,14 +436,11 @@ async function onSubmit(ev){
   const inp=$(`#ans-${id}`); const answer=(inp?.value||'').trim(); if(!answer){ const t=tileEl(id); showTileToast(t,'Enter an answer','info'); return; }
   const btn=ev.currentTarget; const tile=tileEl(id); if(!tile) return;
 
-  // Immediately record this tile as completed client-side to hide on future reloads
   cache.done.add(id); persistDone();
 
-  // Lock + dim (no spinner), keep tile for toast, then slide to end later
   removeClasses(tile,'success','fail','neutral','done'); addClasses(tile,'processing','locked');
   if(inp) inp.disabled=true; btn.disabled=true;
 
-  // Client-side quick verdict
   let verdict='neutral', points=0;
   try{
     const gm = cache.gm || JSON.parse(localStorage.getItem(K.gm)||'null');
@@ -440,11 +451,9 @@ async function onSubmit(ev){
     }
   }catch{}
 
-  // Shimmer verdict
   const SWITCH_MS = 150;
   setTimeout(()=>{ removeClasses(tile,'processing'); addClasses(tile, verdict); }, SWITCH_MS);
 
-  // Toast (2s), then move to end
   const TOAST_MS = 2000;
   if(verdict==='success'){
     const bal = Number($('#coinBalance')?.textContent||0) + points;
@@ -455,15 +464,25 @@ async function onSubmit(ev){
 
   setTimeout(()=>{ addClasses(tile,'moving'); tile.style.order='999'; }, TOAST_MS);
 
-  // Client/server submit
   const SHIMMER_TOTAL = 700 + 600;
   setTimeout(()=> addClasses(tile,'done'), SHIMMER_TOTAL);
 
   try{
     const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
     if(!res.ok) throw new Error(res.error||'Submit failed');
-    const prof = await jget({action:'getprofile', userId:uid}); if(prof.ok && $('#coinBalance')) $('#coinBalance').textContent = prof.balance;
-    const lb = await jget({action:'leaderboard'}); if(lb.ok) renderLeaderboard(lb.leaderboard);
+
+    // panel-scoped busy for profile + leaderboard refresh
+    CCPanelBusy.show('profile');
+    CCPanelBusy.show('leaderboard');
+
+    const prof = await jget({action:'getprofile', userId:uid});
+    if(prof.ok && $('#coinBalance')) $('#coinBalance').textContent = prof.balance;
+
+    const lb = await jget({action:'leaderboard'});
+    if(lb.ok) {
+      cache.lb = lb.leaderboard;
+      renderLeaderboard(lb.leaderboard);
+    }
 
     const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
     cache.archive = cache.archive.filter(x => x.activityId !== id);
@@ -476,7 +495,8 @@ async function onSubmit(ev){
       correctAnswer: act.correctAnswer || null,
       timestamp: new Date().toISOString()
     });
-    saveArchive(); renderArchive();
+    saveArchive();
+    renderArchive();
 
     setTimeout(()=>{
       tile.style.transform='scale(0.98)';
@@ -484,12 +504,14 @@ async function onSubmit(ev){
       setTimeout(()=> tile.remove(), 260);
     }, SHIMMER_TOTAL + 400);
   } catch(e){
-    // If server failed, revert done state so tile can be retried after reload
     cache.done.delete(id); persistDone();
 
     removeClasses(tile,'processing','success','fail','neutral','done','locked','moving');
     tile.style.order = '';
     if(inp) inp.disabled=false; btn.disabled=false; showTileToast(tile, e.message || 'Error', 'bad');
+  } finally {
+    CCPanelBusy.hide('profile');
+    CCPanelBusy.hide('leaderboard');
   }
 }
 
@@ -501,6 +523,7 @@ function wireEvents(){
   on('#primaryAuthBtn', onPrimaryAuth);
   on('#backToIdBtn',    showAuthId);
   on('#logoutBtn',      ()=>{ store.clear(); location.reload(); });
+
   const archBtn = $('#archiveToggle');
   if(archBtn){
     archBtn.addEventListener('click', ()=>{
@@ -509,7 +532,7 @@ function wireEvents(){
       else { p.removeAttribute('hidden'); archBtn.setAttribute('aria-expanded','true'); }
     }, { passive:true });
   }
-    // leaderboard show all / show top 5
+
   const lbToggle = $('#lbToggle');
   if (lbToggle) {
     lbToggle.addEventListener('click', () => {
@@ -519,31 +542,26 @@ function wireEvents(){
     }, { passive: true });
   }
 }
-// ==========================================================
-// UNIVERSAL ENTER-KEY HANDLER (Future-Ready)
-// ==========================================================
+
+// UNIVERSAL ENTER-KEY HANDLER
 document.addEventListener('keydown', (e) => {
-  // Only act on Enter key presses
   if (e.key !== 'Enter') return;
 
   const target = e.target;
   if (!(target instanceof HTMLInputElement)) return;
 
-  // 1️⃣ ID field → behaves like clicking "Login"
   if (target.id === 'idOnly') {
     e.preventDefault();
     goToPin('login');
     return;
   }
 
-  // 2️⃣ PIN field → behaves like clicking "Login/Register"
   if (target.id === 'pin') {
     e.preventDefault();
     onPrimaryAuth();
     return;
   }
 
-  // 3️⃣ Activity answer inputs → trigger their own submit button
   if (target.id && target.id.startsWith('ans-')) {
     e.preventDefault();
     const actId = target.id.slice(4);
@@ -552,7 +570,6 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // 4️⃣ Future-ready pattern: any input with data-submit="#selector"
   const submitSel = target.getAttribute('data-submit');
   if (submitSel) {
     e.preventDefault();
@@ -570,14 +587,13 @@ async function boot(){
   const theme = localStorage.getItem('cc.theme'); document.documentElement.classList.toggle('light', theme==='light');
   const tt = $('#themeToggle'); if(tt){ tt.onclick = ()=>{ const light = !document.documentElement.classList.contains('light'); document.documentElement.classList.toggle('light', light); localStorage.setItem('cc.theme', light?'light':'dark'); }; }
 
-  // Load preview and local caches early
   jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); } }).catch(()=>{});
   loadDoneFromStorage();
   loadArchive(); renderArchive();
 
   const uid=store.uid(), pin=store.pin();
   if(uid && pin){
-        await Busy.show('Loading your dashboard…');
+    await Busy.show('Loading your dashboard…');
     try {
       await precacheFor(uid);
       await ensureAvatarFor(uid);
@@ -585,7 +601,6 @@ async function boot(){
     } finally {
       await Busy.hide();
     }
-
   }
 }
 
