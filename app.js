@@ -450,6 +450,47 @@ function wireEvents(){
     }, { passive:true });
   }
 }
+// ==========================================================
+// UNIVERSAL ENTER-KEY HANDLER (Future-Ready)
+// ==========================================================
+document.addEventListener('keydown', (e) => {
+  // Only act on Enter key presses
+  if (e.key !== 'Enter') return;
+
+  const target = e.target;
+  if (!(target instanceof HTMLInputElement)) return;
+
+  // 1️⃣ ID field → behaves like clicking "Login"
+  if (target.id === 'idOnly') {
+    e.preventDefault();
+    goToPin('login');
+    return;
+  }
+
+  // 2️⃣ PIN field → behaves like clicking "Login/Register"
+  if (target.id === 'pin') {
+    e.preventDefault();
+    onPrimaryAuth();
+    return;
+  }
+
+  // 3️⃣ Activity answer inputs → trigger their own submit button
+  if (target.id && target.id.startsWith('ans-')) {
+    e.preventDefault();
+    const actId = target.id.slice(4);
+    const btn = document.querySelector(`button[data-id="${actId}"]`);
+    if (btn && !btn.disabled) btn.click();
+    return;
+  }
+
+  // 4️⃣ Future-ready pattern: any input with data-submit="#selector"
+  const submitSel = target.getAttribute('data-submit');
+  if (submitSel) {
+    e.preventDefault();
+    const btn = document.querySelector(submitSel);
+    if (btn && !btn.disabled) btn.click();
+  }
+});
 
 // Boot
 async function boot(){
