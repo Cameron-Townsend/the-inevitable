@@ -1,19 +1,23 @@
 // app-avatar-patch.js
-// lightweight runtime glue for avatar UI
+// Avatar UI glue with lazy avatar loading (fetch only when first needed)
+// Uses panel-scoped busy overlay if available (CCPanelBusy)
+
 (function () {
-  const cfg = (window.ClassroomConfig || {});
+  const cfg  = (window.ClassroomConfig || {});
   const BASE = cfg.WEB_APP_URL || '';
 
-  const btnId = 'chooseAvatarBtn';
-  const panelId = 'avatarPickerPanel';
-  const imgId = 'profileAvatar';
+  const BTN_ID   = 'chooseAvatarBtn';
+  const PANEL_ID = 'avatarPickerPanel';
+  const IMG_ID   = 'profileAvatar';
 
-  // show busy ONLY for real network work (not for opening the picker)
+  // --- busy helper: ONLY for real network work, not for just opening UI ---
   function startProfileBusy(message) {
+    // prefer new panel-scoped busy
     if (window.CCPanelBusy) {
       window.CCPanelBusy.show('profile');
       return () => window.CCPanelBusy.hide('profile');
     }
+    // fallback to legacy inline overlay
     const card = document.getElementById('profileCard');
     if (!card) return () => {};
     let ov = card.querySelector('.profile-busy');
@@ -45,12 +49,45 @@
     return window.__profile || null;
   }
 
-  function getAvatars() {
-    return (window.__avatars && Array.isArray(window.__avatars))
-      ? window.__avatars
-      : (window.__avatars && Array.isArray(window.__avatars.avatars))
-        ? window.__avatars.avatars
-        : [];
+  // return current in-memory avatar list (may be empty if never fetched)
+  function getAvatarsFromMemory() {
+    if (Array.isArray(window.__avatars)) {
+      return window.__avatars;
+    }
+    if (window.__avatars && Array.isArray(window.__avatars.avatars)) {
+      return window.__avatars.avatars;
+    }
+    return [];
+  }
+
+  // lazy fetch: only call backend if we don't already have avatars in memory
+  async function ensureAvatarsLoaded() {
+    // option 2: use cached avatars if present; only fetch once per session
+    const current = getAvatarsFromMemory();
+    if (current && current.length) {
+      return current;
+    }
+    if (!BASE) {
+      console.warn('No WEB_APP_URL, cannot load avatars');
+      return [];
+    }
+
+    const stop = startProfileBusy('Loading avatars…');
+    try {
+      const res = await fetch(BASE + '?' + new URLSearchParams({ action: 'getavatars' }), {
+        method: 'GET'
+      });
+      const json = await res.json();
+      const list = json.avatars || json.list || json || [];
+      // cache in global so future opens are instant
+      window.__avatars = Array.isArray(list) ? list : [];
+      return window.__avatars;
+    } catch (e) {
+      console.warn('Failed to load avatars on demand', e);
+      return [];
+    } finally {
+      stop();
+    }
   }
 
   async function persistAvatar(userId, avatarId) {
@@ -71,7 +108,7 @@
 
   function renderProfileAvatar() {
     const prof = getProfile();
-    const img = document.getElementById(imgId);
+    const img = document.getElementById(IMG_ID);
     if (!img) return;
     const url = safeAvatarUrl(prof && (prof.avatarURL || prof.avatarUrl));
     if (url) {
@@ -107,36 +144,40 @@
   }
 
   function mount() {
-    const btn = document.getElementById(btnId);
-    const panel = document.getElementById(panelId);
+    const btn = document.getElementById(BTN_ID);
+    const panel = document.getElementById(PANEL_ID);
     if (!btn) return;
 
     btn.addEventListener('click', async () => {
-      const pickerPanel = document.getElementById(panelId);
+      const pickerPanel = document.getElementById(PANEL_ID);
 
-      // toggle: if it's already open, just hide it, no busy
+      // toggle off if already visible
       if (pickerPanel && !pickerPanel.classList.contains('hidden')) {
         pickerPanel.classList.add('hidden');
         return;
       }
 
+      // at this moment, we may or may not have avatars → ensure them
+      const avatars = await ensureAvatarsLoaded();
+
       const current = (getProfile() && (getProfile().avatarId || getProfile().avatarID)) || null;
 
-      // open the picker — this should NOT block the panel
+      // if plugin exists, let it build the UI
       if (window.ClassroomPlugins && window.ClassroomPlugins.avatarPicker) {
         const choice = await window.ClassroomPlugins.avatarPicker.open({
           current,
-          avatars: getAvatars()
+          avatars
         });
 
-        // user may have dismissed the picker
+        // user canceled
         if (!choice || !choice.avatarId) return;
 
-        // NOW we do network → show busy
+        // now do network (show busy)
         const prof = getProfile() || {};
         const stop = startProfileBusy('Updating avatar…');
         try {
           await persistAvatar(prof.userId, choice.avatarId);
+          // update globals
           window.__profile = Object.assign({}, prof, {
             avatarId: choice.avatarId,
             avatarURL: choice.avatarURL
@@ -150,11 +191,10 @@
           stop();
         }
       } else {
-        // fallback inline picker — no busy for just showing it
+        // fallback inline picker
         if (!panel) return;
         panel.innerHTML = '';
-        const list = getAvatars();
-        list.forEach(av => {
+        avatars.forEach(av => {
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = av.avatarId;
