@@ -64,50 +64,50 @@
     </section>
 
     <!-- App -->
-    <section id="dashboard" class="card">
-      <div class="grid two">
-        <div class="card" id="profileCard">
-          <h2>Profile 👤</h2>
+   <section id="dashboard">
+  <!-- top row: 2-column layout -->
+  <div class="grid two">
+    <div class="card" id="profileCard">
+      <h2>Profile 👤</h2>
 
-          <!-- avatar + name row (added) -->
-          <div class="profile-row">
-            <img id="profileAvatar" class="avatar-img" alt="Avatar" />
-            <strong id="displayName">—</strong>
-          </div>
+      <!-- avatar + name row (added) -->
+      <div class="profile-row">
+        <img id="profileAvatar" class="avatar-img" alt="Avatar" />
+        <strong id="displayName">—</strong>
+      </div>
 
-          <p>Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
+      <p>Coins: <span class="coin-emoji">🪙</span> <span id="coinBalance">0</span></p>
 
-          <!-- choose avatar trigger (added) -->
-          <button id="chooseAvatarBtn" class="secondary" type="button">Choose Avatar</button>
+      <!-- choose avatar trigger (added) -->
+      <button id="chooseAvatarBtn" class="secondary" type="button">Choose Avatar</button>
+    </div>
 
-          <!-- avatar picker panel (hidden by default; added) -->
-          <div id="avatarPickerPanel" class="avatar-picker hidden" aria-label="Choose an avatar"></div>
-
-          <button id="logoutBtn" class="secondary">Logout</button>
-        </div>
-      <div class="card" id="boardCard">
-  <div class="lb-header">
-    <h2>Leaderboard 🏆</h2>
-    <button id="lbToggle" class="secondary small" type="button">Show all</button>
+    <div class="card" id="boardCard">
+      <div class="lb-header">
+        <h2>Leaderboard 🏆</h2>
+        <button id="lbToggle" class="secondary small" type="button">Show all</button>
+      </div>
+      <ol id="leaderboard"></ol>
+    </div>
   </div>
-  <ol id="leaderboard"></ol>
-</div>
 
-      <section class="card" id="activitiesCard">
-        <div class="section-head">
-          <h2>Activities 🧩</h2>
-        </div>
-        <div id="activities" class="activities"></div>
-      </section>
+  <!-- full-width activities -->
+  <section class="card" id="activitiesCard">
+    <div class="section-head">
+      <h2>Activities 🧩</h2>
+    </div>
+    <div id="activities" class="activities"></div>
+  </section>
 
-      <!-- Archive Drawer -->
-      <section class="card archive">
-        <button id="archiveToggle" class="archive-toggle" aria-expanded="false">📂 Archive (Previous Activities)</button>
-        <div id="archivePanel" class="archive-panel" hidden>
-          <ul id="archiveList" class="archive-list"></ul>
-        </div>
-      </section>
-    </section>
+  <!-- Archive Drawer (full-width) -->
+  <section class="card archive">
+    <button id="archiveToggle" class="archive-toggle" aria-expanded="false">📂 Archive (Previous Activities)</button>
+    <div id="archivePanel" class="archive-panel" hidden>
+      <ul id="archiveList" class="archive-list"></ul>
+    </div>
+  </section>
+</section>
+
   </main>
 
   <div id="toast" class="toast hidden"></div>
