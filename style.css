@@ -409,7 +409,7 @@ body[data-state="app"] #dashboard{ display:block; }
   position: relative;
 }
 
-/* profile-only busy overlay */
+/* profile-only busy overlay (legacy) */
 .profile-busy {
   position: absolute;
   inset: 0;
@@ -496,4 +496,49 @@ body[data-state="app"] #dashboard{ display:block; }
 }
 #leaderboard li::marker {
   content: '' !important;
+}
+
+/* =========================================
+   NEW: Panel-scoped busy overlay (global pattern)
+   ========================================= */
+
+/* any panel that wants a scoped busy overlay */
+.cc-panel {
+  position: relative; /* so overlay can be absolutely positioned */
+}
+
+/* overlay that sits on top of panel content */
+.panel-busy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 8, 20, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
+  z-index: 10;
+  border-radius: inherit;
+}
+
+/* spinner inside panel overlay */
+.panel-busy-overlay::after {
+  content: "";
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  border: 3px solid rgba(255,255,255,0.25);
+  border-top-color: rgba(255,255,255,0.9);
+  animation: panelspin 0.7s linear infinite;
+}
+
+.panel-busy-overlay.is-active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+@keyframes panelspin {
+  to { transform: rotate(360deg); }
 }
