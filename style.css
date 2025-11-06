@@ -402,4 +402,62 @@ body[data-state="app"] #dashboard{ display:block; }
 
 /* we already have .hidden in your sheet; we’ll reuse it */
 /* .hidden { display:none!important; } */
+/* ============================
+   Leaderboard layout tweaks
+   ============================ */
+
+/* header with toggle */
+.lb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* main leaderboard rows on dashboard */
+#leaderboard .lb-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4px 6px;
+}
+
+/* medal + numeric rank block */
+.lb-left {
+  min-width: 72px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-weight: 600;
+}
+
+/* name should take remaining space */
+.lb-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* score on the right */
+.lb-score {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* tighten small leaderboard avatars */
+#leaderboard .avatar-img.sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* highlight current user */
+.lb-row.me {
+  background: rgba(127, 90, 240, 0.08);
+  border-left: 3px solid rgba(127, 90, 240, 0.9);
+  border-radius: 999px;
+}
 
