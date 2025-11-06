@@ -80,15 +80,39 @@ function renderProfile(p){
   $('#coinBalance') && ($('#coinBalance').textContent = p.balance??0);
   // we do NOT force avatar here; a separate patch file will read window.__profile
 }
+
 function renderLeaderboard(rows){
   const ol = $('#leaderboard'); if(!ol) return; ol.innerHTML='';
   (rows||[]).forEach((r,i)=>{
-    const li=document.createElement('li');
-    const m=i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
-    li.textContent=`${m} ${r.name} — 🪙 ${r.score}`;
+    const li = document.createElement('li');
+    const m  = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
+
+    // build row
+    const row = document.createElement('div');
+    row.className = 'lb-row';
+
+    // avatar (if backend gave us one)
+    if (r.avatarURL) {
+      const img = document.createElement('img');
+      img.className = 'avatar-img sm';
+      img.src = r.avatarURL;
+      img.alt = r.name || r.userId || 'Avatar';
+      img.onerror = () => img.remove();
+      row.appendChild(img);
+    }
+
+    // name + score
+    const span = document.createElement('span');
+    span.textContent = `${r.name} — 🪙 ${r.score}`;
+    row.appendChild(span);
+
+    li.textContent = m + ' ';
+    li.appendChild(row);
     ol.appendChild(li);
   });
 }
+
+
 function renderLeaderboardPreview(rows){
   const ol = $('#leaderboardPreview'); if(!ol) return; ol.innerHTML='';
   (rows||[]).slice(0,8).forEach((r,i)=>{
