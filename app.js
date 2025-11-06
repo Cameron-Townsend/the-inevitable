@@ -363,36 +363,53 @@ async function onPrimaryAuth(){
   const pin = $('#pin')?.value.trim();
   const remember = $('#rememberPin')?.checked && !USE_SESSION_ONLY;
   if(!uid || !pin){ setMsg('#loginMsg','Enter PIN'); return; }
-  const button=$('#primaryAuthBtn'); if(button) button.setAttribute('disabled','');
-  Busy.show(cache.authMode==='register' ? 'Creating account…' : 'Signing in…');
-  try{
-    if(cache.authMode==='register'){
-      const r=await jpost({ action:'register', userId:uid, pin, displayName:uid });
-      if(!r.ok) throw new Error(r.error||'Register failed');
+
+  const button = $('#primaryAuthBtn');
+  if (button) button.setAttribute('disabled','');
+
+  await Busy.show(cache.authMode === 'register' ? 'Creating account…' : 'Signing in…');
+
+  try {
+    // 1) register if needed
+    if (cache.authMode === 'register') {
+      const r = await jpost({ action:'register', userId:uid, pin, displayName:uid });
+      if (!r.ok) throw new Error(r.error || 'Register failed');
     }
-    const lg=await jpost({ action:'login', userId:uid, pin });
-    if(!lg.ok) throw new Error(lg.error||'Login failed');
 
-    store.set(uid, pin, remember); setMsg('#loginMsg','');
+    // 2) login
+    const lg = await jpost({ action:'login', userId:uid, pin });
+    if (!lg.ok) throw new Error(lg.error || 'Login failed');
 
-    // refresh all data
-    await precacheFor(uid);
+    // 3) persist creds
+    store.set(uid, pin, remember);
+    setMsg('#loginMsg','');
 
-    // ensure profile name from login response
-    cache.profile = cache.profile || { userId:uid, balance:0 };
+    // 4) build a minimal profile immediately
+    cache.profile = cache.profile || { userId: uid, balance: 0 };
     cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
 
-    // ensure avatar if missing
-    await ensureAvatarFor(uid);
-
+    // 5) show the dashboard right away so it doesn't look "stuck"
     renderDash();
-  } catch(e){
-    setMsg('#loginMsg', e.message||'Auth error');
+
+    // 6) now do the heavy precache in the background
+    //    if it fails, we just won't crash the UI
+    try {
+      await precacheFor(uid);
+      await ensureAvatarFor(uid);
+      // re-render so we get fresh lb/activities/avatars
+      renderDash();
+    } catch (e) {
+      console.warn('Background precache after auth failed:', e);
+    }
+
+  } catch (e) {
+    setMsg('#loginMsg', e.message || 'Auth error');
   } finally {
-    Busy.hide();
-    if(button) button.removeAttribute('disabled');
+    await Busy.hide();
+    if (button) button.removeAttribute('disabled');
   }
 }
+
 
 // Submit (hide-on-reload: add to done set immediately)
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
