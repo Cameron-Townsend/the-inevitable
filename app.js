@@ -1,4 +1,7 @@
-// Classroom Challenge — app v19.1.7b (panel-scoped busy + cache-first + staggered loads + avatar-preserving profile)
+// Classroom Challenge — app v19.1.7c
+// panel-scoped busy + cache-first + staggered loads + avatar-preserving profile
+// + quiet refresh for submit + avatar URL resolver
+
 const { WEB_APP_URL, USE_SESSION_ONLY } = (window.ClassroomConfig||{});
 if (!WEB_APP_URL) console.error('Missing WEB_APP_URL in config.js');
 
@@ -107,8 +110,11 @@ const cache = {
   hideCompleted:true,
   avatars:null,
   showFullLB:false,
-  timestamps:{} // in-memory timestamps
+  timestamps:{}
 };
+
+// leaderboard throttle (ms)
+let lastLeaderboardRefresh = 0;
 
 function loadTimestamps(){
   try {
@@ -308,9 +314,9 @@ function showToast(msg, kind=''){
   toastTimer=setTimeout(()=>t.classList.add('hidden'), 2400);
 }
 
-// Helper: pick random avatar from cache (still available for defaulting)
+// Helper: pick random avatar from cache
 function pickRandomAvatar(){
-  const list = (cache.avatars && Array.isArray(cache.avatars)) ? cache.avatars : (cache.avatars && cache.avatars.avatars) ? cache.avatars.avatars : null;
+  const list = (cache.avatars && Array.isArray(cache.avatars)) ? cache.avatars : (cache.avatars && Array.isArray(cache.avatars.avatars)) ? cache.avatars.avatars : null;
   if(!list || !list.length) return null;
   const idx = Math.floor(Math.random() * list.length);
   return list[idx];
@@ -336,17 +342,32 @@ async function ensureAvatarFor(uid){
   }
 }
 
+/**
+ * If we have avatarId but not avatarURL (common on first load or from old cache),
+ * quietly fetch avatars once and resolve just this user's avatar.
+ */
+async function ensureCurrentAvatarURL(uid){
+  if (!cache.profile) return;
+  const { avatarId, avatarURL } = cache.profile;
+  if (!avatarId || avatarURL) return;
+  try {
+    const res = await jget({ action:'getavatars' });
+    if (res.ok && Array.isArray(res.avatars)) {
+      const hit = res.avatars.find(a => a.avatarId === avatarId);
+      if (hit) {
+        cache.profile.avatarURL = hit.avatarURL;
+        window.__profile = cache.profile;
+        try { localStorage.setItem(K.prof, JSON.stringify(cache.profile)); } catch {}
+      }
+    }
+  } catch (e) {
+    // silent fail — we just leave avatar blank instead of broken
+  }
+}
+
 /* =========================
    Data fetching (optimized)
    ========================= */
-
-/**
- * Fetch only the core data needed to make the dashboard meaningful.
- * - activities
- * - grading map
- * - submissions
- * - profile (now preserved with avatar fields!)
- */
 async function precacheCore(uid){
   CCPanelBusy.show('profile');
   CCPanelBusy.show('activities');
@@ -380,7 +401,6 @@ async function precacheCore(uid){
     }
 
     if(prof.ok){
-      // PRESERVE avatarId + avatarURL from backend
       cache.profile = {
         userId: uid,
         balance: prof.balance,
@@ -396,6 +416,9 @@ async function precacheCore(uid){
 
     loadArchive();
     renderArchive();
+
+    // extra: if profile had avatarId but no URL, resolve it quietly
+    await ensureCurrentAvatarURL(uid);
   } finally {
     CCPanelBusy.hide('profile');
     CCPanelBusy.hide('activities');
@@ -406,6 +429,7 @@ async function precacheCore(uid){
 /**
  * Secondary fetches that can happen a bit later:
  * - leaderboard
+ * (we keep the overlay here because it's initial load, not per-submit)
  */
 function scheduleSecondaryFetches(){
   setTimeout(async () => {
@@ -416,6 +440,7 @@ function scheduleSecondaryFetches(){
         cache.lb = lb.leaderboard;
         try{ localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }catch{}
         saveTimestamp('leaderboard');
+        lastLeaderboardRefresh = Date.now();
         renderLeaderboard(lb.leaderboard);
         renderLeaderboardPreview(lb.leaderboard);
       }
@@ -461,6 +486,7 @@ async function goToPin(mode){
         renderLeaderboardPreview(cache.lb);
         try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{};
         saveTimestamp('leaderboard');
+        lastLeaderboardRefresh = Date.now();
       }
     } else if (cache.lb) {
       renderLeaderboardPreview(cache.lb);
@@ -506,7 +532,7 @@ async function onPrimaryAuth(){
     store.set(uid, pin, remember);
     setMsg('#loginMsg','');
 
-    // PRESERVE avatar from login response too
+    // preserve avatar from login response
     cache.profile = cache.profile || { userId: uid, balance: 0 };
     cache.profile.displayName = lg.displayName || cache.profile.displayName || uid;
     cache.profile.avatarId = lg.avatarId || cache.profile.avatarId;
@@ -533,7 +559,7 @@ async function onPrimaryAuth(){
 }
 
 /* =========================
-   Submit flow
+   Submit flow (quiet refresh for profile & throttled leaderboard)
    ========================= */
 function tileEl(id){ return document.querySelector(`[data-tile="${id}"]`); }
 function addClasses(el,...c){ if(!el) return; c.forEach(x=> el.classList.add(x)); }
@@ -580,27 +606,45 @@ async function onSubmit(ev){
     const res = await jpost({ action:'submitanswer', userId:uid, pin, activityId:id, answer });
     if(!res.ok) throw new Error(res.error||'Submit failed');
 
-    CCPanelBusy.show('profile');
-    CCPanelBusy.show('leaderboard');
+    // QUIET refresh of profile (no panel overlay)
+    (async () => {
+      try {
+        const prof = await jget({action:'getprofile', userId:uid});
+        if (prof.ok) {
+          cache.profile = cache.profile || { userId: uid };
+          cache.profile.balance = prof.balance;
+          cache.profile.displayName = prof.displayName || cache.profile.displayName;
+          cache.profile.avatarId = prof.avatarId;
+          cache.profile.avatarURL = prof.avatarURL;
+          try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
+          saveTimestamp('profile');
+          // make sure avatarURL is resolved if backend hadn't set it
+          await ensureCurrentAvatarURL(uid);
+          renderProfile(cache.profile);
+          window.__profile = cache.profile;
+        }
+      } catch (e) {
+        console.warn('quiet profile refresh failed after submit', e);
+      }
+    })();
 
-    // refresh profile from backend (now also keeps avatar fields!)
-    const prof = await jget({action:'getprofile', userId:uid});
-    if(prof.ok && $('#coinBalance')) {
-      $('#coinBalance').textContent = prof.balance;
-      cache.profile = cache.profile || { userId: uid };
-      cache.profile.balance = prof.balance;
-      cache.profile.avatarId = prof.avatarId;
-      cache.profile.avatarURL = prof.avatarURL;
-      try{ localStorage.setItem(K.prof, JSON.stringify(cache.profile)); }catch{}
-      saveTimestamp('profile');
-    }
-
-    const lb = await jget({action:'leaderboard'});
-    if(lb.ok) {
-      cache.lb = lb.leaderboard;
-      renderLeaderboard(lb.leaderboard);
-      try{ localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }catch{}
-      saveTimestamp('leaderboard');
+    // THROTTLED leaderboard refresh (quiet, no overlay)
+    const now = Date.now();
+    if (now - lastLeaderboardRefresh > 30000) {
+      (async () => {
+        try {
+          const lb = await jget({action:'leaderboard'});
+          if(lb.ok) {
+            cache.lb = lb.leaderboard;
+            renderLeaderboard(lb.leaderboard);
+            try{ localStorage.setItem(K.lb, JSON.stringify(cache.lb)); }catch{}
+            saveTimestamp('leaderboard');
+            lastLeaderboardRefresh = Date.now();
+          }
+        } catch (e) {
+          console.warn('quiet leaderboard refresh failed', e);
+        }
+      })();
     }
 
     const act = (cache.acts||[]).find(a => a.activityId === id) || { title:id, points:0 };
@@ -628,9 +672,6 @@ async function onSubmit(ev){
     removeClasses(tile,'processing','success','fail','neutral','done','locked','moving');
     tile.style.order = '';
     if(inp) inp.disabled=false; btn.disabled=false; showTileToast(tile, e.message || 'Error', 'bad');
-  } finally {
-    CCPanelBusy.hide('profile');
-    CCPanelBusy.hide('leaderboard');
   }
 }
 
@@ -726,13 +767,18 @@ async function boot(){
   if (cache.lb) {
     renderLeaderboardPreview(cache.lb);
   } else if (shouldRefresh('leaderboard', 5*60*1000)) {
-    jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{}; saveTimestamp('leaderboard'); } }).catch(()=>{});
+    jget({action:'leaderboard'}).then(lb=>{ if(lb.ok){ cache.lb=lb.leaderboard; renderLeaderboardPreview(lb.leaderboard); try{localStorage.setItem(K.lb, JSON.stringify(cache.lb));}catch{}; saveTimestamp('leaderboard'); lastLeaderboardRefresh = Date.now(); } }).catch(()=>{});
   }
 
   const uid=store.uid(), pin=store.pin();
   if(uid && pin){
     showApp();
     renderDash();
+
+    // if cached profile has avatarId but no URL, quietly resolve it early
+    if (cache.profile && cache.profile.avatarId && !cache.profile.avatarURL) {
+      ensureCurrentAvatarURL(uid);
+    }
 
     await Busy.show('Loading your dashboard…');
     try {
