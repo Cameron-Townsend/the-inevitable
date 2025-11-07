@@ -1,5 +1,10 @@
 // plugins/avatarPicker.js
-// UMD-ish tiny plugin for Classroom Challenge
+// Instant, UI-only avatar picker for Classroom Challenge
+// - no busy overlays
+// - uses whatever avatar list is passed in
+// - falls back to window.__avatars
+// - closes on select or outside click
+
 (function (root, factory) {
   if (typeof define === 'function' && define.amd) {
     define([], factory);
@@ -27,12 +32,13 @@
   function open(opts) {
     opts = opts || {};
     var current = opts.current || null;
+    // priority: passed-in list → global → empty
     var avatars = Array.isArray(opts.avatars)
       ? opts.avatars
       : (Array.isArray(window.__avatars) ? window.__avatars : []);
 
     return new Promise(function (resolve) {
-      // prefer the panel we already have in index.html
+      // reuse the panel in index.html if present
       var panel = document.getElementById('avatarPickerPanel');
       var createdTemp = false;
 
@@ -47,26 +53,33 @@
       panel.innerHTML = '';
       panel.classList.remove('hidden');
 
-      avatars.forEach(function (av) {
-        var tile = document.createElement('div');
-        tile.className = 'avatar-tile';
-        if (current && av.avatarId === current) {
-          tile.classList.add('selected');
-        }
-        var img = document.createElement('img');
-        img.src = safe(av.avatarURL);
-        img.alt = av.avatarId || 'Avatar';
-        tile.appendChild(img);
-        tile.addEventListener('click', function () {
-          panel.classList.add('hidden');
-          if (createdTemp) panel.remove();
-          resolve({
-            avatarId: av.avatarId,
-            avatarURL: av.avatarURL
+      if (!avatars.length) {
+        var msg = document.createElement('div');
+        msg.className = 'avatar-empty';
+        msg.textContent = 'No avatars available.';
+        panel.appendChild(msg);
+      } else {
+        avatars.forEach(function (av) {
+          var tile = document.createElement('div');
+          tile.className = 'avatar-tile';
+          if (current && av.avatarId === current) {
+            tile.classList.add('selected');
+          }
+          var img = document.createElement('img');
+          img.src = safe(av.avatarURL);
+          img.alt = av.avatarId || 'Avatar';
+          tile.appendChild(img);
+          tile.addEventListener('click', function () {
+            panel.classList.add('hidden');
+            if (createdTemp) panel.remove();
+            resolve({
+              avatarId: av.avatarId,
+              avatarURL: av.avatarURL
+            });
           });
+          panel.appendChild(tile);
         });
-        panel.appendChild(tile);
-      });
+      }
 
       // if we created a floating panel, allow click-outside to close
       if (createdTemp) {
