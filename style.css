@@ -542,3 +542,48 @@ body[data-state="app"] #dashboard{ display:block; }
 @keyframes panelspin {
   to { transform: rotate(360deg); }
 }
+/* =========================================
+   Minor UX Tweaks for Avatar Picker + Panel Busy
+   ========================================= */
+
+/* make panel busy overlay sit below avatar picker grid */
+[data-panel="profile"] .panel-busy-overlay {
+  z-index: 1;
+}
+
+/* avatar picker appears above panel busy */
+.avatar-picker {
+  position: relative;
+  z-index: 5;
+}
+
+/* loading state when avatars list is empty */
+.avatar-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  font-size: 0.9rem;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* subtle scroll shadow at top and bottom of avatar grid */
+.avatar-picker::before,
+.avatar-picker::after {
+  content: "";
+  position: sticky;
+  left: 0;
+  right: 0;
+  height: 12px;
+  pointer-events: none;
+  z-index: 6;
+}
+.avatar-picker::before {
+  top: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.35), transparent);
+}
+.avatar-picker::after {
+  bottom: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.35), transparent);
+}
