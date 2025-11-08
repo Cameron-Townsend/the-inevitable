@@ -1,5 +1,6 @@
 // app-avatar-patch.js
-// Avatar UI glue — instant-open picker, lazy background refresh, panel-busy only on SAVE
+// Avatar UI glue — instant-open picker, lazy background refresh,
+// panel-busy only on SAVE, plus safer rendering for empty/missing avatars.
 
 (function () {
   const cfg  = (window.ClassroomConfig || {});
@@ -85,6 +86,28 @@
     window.__avatars = Array.isArray(list) ? list : [];
   }
 
+  /**
+   * Try to hydrate the current profile's avatarURL from whatever avatar list we already have.
+   * This helps the "new account, no avatarURL yet" case.
+   */
+  function resolveCurrentAvatarURLFromCaches() {
+    const prof = getProfile();
+    if (!prof || !prof.avatarId || prof.avatarURL) return;
+
+    // look in memory first
+    const mem = getAvatarsFromMemory();
+    let hit = mem.find(a => a.avatarId === prof.avatarId);
+    if (!hit || !hit.avatarURL) {
+      // try localStorage cache
+      const ls = getAvatarsFromLocalStorage();
+      hit = (ls.avatars || []).find(a => a.avatarId === prof.avatarId);
+    }
+    if (hit && hit.avatarURL) {
+      prof.avatarURL = hit.avatarURL;
+      window.__profile = prof;
+    }
+  }
+
   // background refresh — NO panel busy, purely silent
   async function refreshAvatarsInBackground() {
     if (!BASE) return;
@@ -97,6 +120,18 @@
       const clean = Array.isArray(list) ? list : [];
       setGlobalAvatars(clean);
       saveAvatarsToLocalStorage(clean);
+
+      // Try to hydrate current profile's avatarURL now that we have fresh data
+      const prof = getProfile();
+      if (prof && prof.avatarId && !prof.avatarURL) {
+        const match = clean.find(a => a.avatarId === prof.avatarId);
+        if (match && match.avatarURL) {
+          prof.avatarURL = match.avatarURL;
+          window.__profile = prof;
+          renderProfileAvatar();
+          renderLeaderboardAvatars();
+        }
+      }
 
       // if the panel is open right now, re-render with the fresh list
       const panel = document.getElementById(PANEL_ID);
@@ -133,11 +168,16 @@
     const prof = getProfile();
     const img = document.getElementById(IMG_ID);
     if (!img) return;
+
+    // try to hydrate from cached avatar lists first
+    resolveCurrentAvatarURLFromCaches();
+
     const url = safeAvatarUrl(prof && (prof.avatarURL || prof.avatarUrl));
     if (url) {
       img.src = url;
       img.alt = prof.displayName || prof.userId || 'Avatar';
     } else {
+      // don't show broken image
       img.removeAttribute('src');
       img.alt = 'Avatar';
     }
@@ -146,6 +186,10 @@
   function renderLeaderboardAvatars() {
     const prof = getProfile();
     if (!prof || !prof.userId) return;
+    if (prof.avatarId && !prof.avatarURL) {
+      // try to hydrate if we can
+      resolveCurrentAvatarURLFromCaches();
+    }
     const rows = document.querySelectorAll('#leaderboard li .lb-row, #leaderboard li div.lb-row');
     rows.forEach(row => {
       if (!row.classList.contains('me')) return;
@@ -171,7 +215,10 @@
     panel.innerHTML = '';
     panel.classList.remove('hidden');
 
-    if (!avatars || !avatars.length) {
+    // filter out bad entries that cause layout gaps
+    const usable = (avatars || []).filter(av => av && av.avatarId && av.avatarURL);
+
+    if (!usable.length) {
       const msg = document.createElement('div');
       msg.className = 'avatar-empty';
       msg.textContent = 'Loading avatars…';
@@ -179,7 +226,7 @@
       return;
     }
 
-    avatars.forEach(av => {
+    usable.forEach(av => {
       const tile = document.createElement('div');
       tile.className = 'avatar-tile';
       if (currentId && av.avatarId === currentId) {
@@ -256,10 +303,8 @@
         refreshAvatarsInBackground();
       }
 
-      // 3) if plugin exists, we can let it handle the UI with the current list
-      //    but we DO NOT do busy here anymore
+      // 3) plugin path — still instant, still no busy
       if (window.ClassroomPlugins && window.ClassroomPlugins.avatarPicker) {
-        // NOTE: we still want instant open, so only pass current list
         window.ClassroomPlugins.avatarPicker.open({
           current: getCurrentAvatarId(),
           avatars: initial
@@ -297,5 +342,8 @@
     mount();
     const dash = document.getElementById('dashboard') || document.body;
     obs.observe(dash, { childList: true, subtree: true });
+
+    // also try to render once on load in case profile was already set
+    renderProfileAvatar();
   });
 })();
