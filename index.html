@@ -7,8 +7,8 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Classroom Challenge</title>
-  <script>window.ASSET_VERSION='2025-10-30.v19';</script>
-  <link rel="stylesheet" href="style.css?v=uc20" />
+  <script>window.ASSET_VERSION='2025-10-30.v19.1.8-core';</script>
+  <link rel="stylesheet" href="style.css?v=uc22" />
 </head>
 <body data-state="auth-id">
   <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">🌓</button>
@@ -139,8 +139,13 @@
 
   <!-- scripts -->
   <script src="config.js?v=2"></script>
-  <script src="app.js?v=uc19"></script>
-  <script src="app-avatar-patch.js?v=uc19"></script>
-  <script src="plugins/avatarPicker.js?v=uc19"></script>
+  <!-- core app (auth, dashboard, activities, submit) -->
+  <script src="app.js?v=uc22"></script>
+  <!-- non-core UI (archive toggle, leaderboard toggle, etc.) -->
+  <script src="app-ui.js?v=uc22"></script>
+  <!-- avatar glue (instant picker, avatar render, fixes) -->
+  <script src="app-avatar-patch.js?v=uc22"></script>
+  <!-- plugin picker (optional, used by avatar glue) -->
+  <script src="plugins/avatarPicker.js?v=uc22"></script>
 </body>
 </html>
